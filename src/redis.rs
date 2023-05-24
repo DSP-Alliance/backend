@@ -1,5 +1,7 @@
 extern crate redis;
 
+use std::{mem::MaybeUninit, time};
+
 use redis::{Commands, Connection, RedisError};
 
 use crate::votes::Vote;
@@ -7,6 +9,38 @@ use crate::votes::Vote;
 pub struct Redis {
     con: Connection,
 }
+
+pub enum VoteStatus {
+    DoesNotExist,
+    Open,
+    Closed,
+}
+
+enum LookupKey {
+    FipNumber(u32),
+    Timestamp(u32),
+}
+
+impl LookupKey {
+    fn to_bytes(&self) -> Vec<u8> {
+        let (lookup_type, fip) = match self {
+            LookupKey::FipNumber(fip) => (0, fip),
+            LookupKey::Timestamp(fip) => (1, fip),
+        };
+        let slice = unsafe {
+            let mut key = MaybeUninit::<[u8; 5]>::uninit();
+            let start = key.as_mut_ptr() as *mut u8;
+            (start.add(0) as *mut [u8; 4]).write(fip.to_be_bytes());
+
+            // This is the bit we set to 0 if we only want the token object
+            (start.add(4) as *mut [u8; 1]).write([lookup_type as u8]);
+
+            key.assume_init()
+        };
+        Vec::from(slice)
+    }
+}
+
 /*
    TODO: Set up table for tracking storage size of votes
 */
@@ -32,20 +66,68 @@ impl Redis {
             Some(v) => vec![v],
             None => vec![],
         };
+
+        let fip_num = fip_number.into();
+
+        let vote_key = LookupKey::FipNumber(fip_num).to_bytes();
+        let time_key = LookupKey::Timestamp(fip_num).to_bytes();
+
         // Set a map of FIP number to vector of all votes
-        self.con
-            .set::<u32, Vec<Vote>, ()>(fip_number.into(), vote)?;
+        self.con.set::<Vec<u8>, Vec<Vote>, ()>(vote_key, vote)?;
 
         // Set a map of FIP to timestamp of vote start
-        
+        let timestamp = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
+
         Ok(())
     }
 
     // GETTERS
 
     pub fn votes(&mut self, fip_number: impl Into<u32>) -> Result<Vec<Vote>, RedisError> {
-        let votes: Vec<Vote> = self.con.get::<u32, Vec<Vote>>(fip_number.into())?;
+        let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
+        let votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key)?;
         Ok(votes)
+    }
+
+    pub fn vote_status(&mut self, fip_number: impl Into<u32>) -> Result<VoteStatus, RedisError> {
+        let num = fip_number.into();
+        let vote_key = LookupKey::FipNumber(num).to_bytes();
+        let time_key = LookupKey::Timestamp(num).to_bytes();
+
+        // Check if the FIP number exists in the database
+        if !self.con.exists(vote_key)? {
+            return Ok(VoteStatus::DoesNotExist);
+        }
+
+        // Check if the FIP number has a timestamp
+        if !self.con.exists(time_key.clone())? {
+            return Ok(VoteStatus::DoesNotExist);
+        }
+
+        // Check if the vote is still open
+        let time_start: u64 = self.con.get::<Vec<u8>, u64>(time_key)?;
+        let now = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // Get current config for voting period
+        let vote_length = crate::config::Config::from_env().vote_length;
+
+        if now - time_start < vote_length {
+            return Ok(VoteStatus::Open);
+        } else {
+            return Ok(VoteStatus::Closed);
+        }
+    }
+
+    pub fn vote_start(&mut self, fip_number: impl Into<u32>) -> Result<u64, RedisError> {
+        let key = LookupKey::Timestamp(fip_number.into()).to_bytes();
+        let timestamp: u64 = self.con.get::<Vec<u8>, u64>(key)?;
+        Ok(timestamp)
     }
 
     // SETTERS

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 # WEB DEP
 actix-web = "4.3.1"
+url = "2.3.1"
 
 # DB DEP
 redis = "0.23.0"
