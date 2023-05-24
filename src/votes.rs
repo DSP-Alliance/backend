@@ -48,7 +48,7 @@ impl VoteOption {
 }
 
 pub struct Vote {
-    choice: VoteOption,
+    pub choice: VoteOption,
     timestamp: u64,
     voter: VerifyingKey,
 }

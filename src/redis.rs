@@ -3,8 +3,9 @@ extern crate redis;
 use std::{mem::MaybeUninit, time};
 
 use redis::{Commands, Connection, RedisError};
+use serde::Serialize;
 
-use crate::votes::Vote;
+use crate::votes::{Vote, VoteOption};
 
 pub struct Redis {
     con: Connection,
@@ -41,19 +42,32 @@ impl LookupKey {
     }
 }
 
+#[derive(Serialize)]
+struct VoteResults {
+    yay: u64,
+    nay: u64,
+    abstain: u64,
+    yay_storage_size: u128,
+    nay_storage_size: u128,
+    abstain_storage_size: u128,
+}
+
 /*
    TODO: Set up table for tracking storage size of votes
 */
 
 impl Redis {
     pub fn new() -> Result<Redis, RedisError> {
-        let client = redis::Client::open("redis://127.0.0.1:6379")?;
+        let redis_path = crate::config::Config::from_env().redis_path;
+        let client = redis::Client::open(redis_path)?;
         let con = client.get_connection()?;
 
         Ok(Self { con })
     }
 
-    // INITIALIZATION
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
+    /                                 INITIALIZATION                                 /
+    /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
     /// This function assumes that the FIP number is not already in the database
     pub fn new_vote(
@@ -85,12 +99,49 @@ impl Redis {
         Ok(())
     }
 
-    // GETTERS
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
+    /                                     GETTERS                                    /
+    /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    pub fn votes(&mut self, fip_number: impl Into<u32>) -> Result<Vec<Vote>, RedisError> {
+    fn votes(&mut self, fip_number: impl Into<u32>) -> Result<Vec<Vote>, RedisError> {
         let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
         let votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key)?;
         Ok(votes)
+    }
+
+    pub fn vote_results(&mut self, fip_number: impl Into<u32>) -> Result<String, RedisError> {
+        let mut yay = 0;
+        let mut nay = 0;
+        let mut abstain = 0;
+
+        let votes = self.votes(fip_number)?;
+
+        for vote in votes {
+            match vote.choice {
+                VoteOption::Yay => yay += 1,
+                VoteOption::Nay => nay += 1,
+                VoteOption::Abstain => abstain += 1,
+            }
+        }
+
+        let results = VoteResults {
+            yay,
+            nay,
+            abstain,
+            yay_storage_size: 0,
+            nay_storage_size: 0,
+            abstain_storage_size: 0,
+        };
+
+        let json = match serde_json::to_string(&results) {
+            Ok(j) => j,
+            Err(_) => return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Error serializing vote results",
+            ))),
+        };
+
+        Ok(json)
     }
 
     pub fn vote_status(&mut self, fip_number: impl Into<u32>) -> Result<VoteStatus, RedisError> {
@@ -130,7 +181,9 @@ impl Redis {
         Ok(timestamp)
     }
 
-    // SETTERS
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
+    /                                     SETTERS                                    /
+    /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
     pub fn add_vote<T>(&mut self, fip_number: T, vote: Vote) -> Result<(), RedisError>
     where

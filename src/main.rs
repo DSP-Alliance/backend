@@ -2,13 +2,45 @@ use actix_web::{
     get, post, web, App, HttpResponse, HttpServer, Responder,
 };
 
-use fip_voting::{votes::RecievedVote, redis::Redis};
+use fip_voting::{votes::RecievedVote, redis::{Redis, VoteStatus}};
 
 #[get("/filecoin/vote/{fip_number}")]
 async fn get_votes(fip_number: web::Path<u32>) -> impl Responder {
-    // Get the votes from the redis database
+    let num = fip_number.into_inner();
 
-    HttpResponse::Ok().finish()
+    // Open a connection to the redis database
+    let mut redis = match Redis::new() {
+        Ok(redis) => redis,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(e.to_string());
+        }
+    };
+
+    // Get the status of the vote from the database
+    let status = match redis.vote_status(num) {
+        Ok(status) => status,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(e.to_string());
+        }
+    };
+
+    // Return the appropriate response
+    match status {
+        VoteStatus::Open => HttpResponse::Forbidden().finish(),
+        VoteStatus::Closed => {
+            let vote_results = match redis.vote_results(num) {
+                Ok(results) => results,
+                Err(e) => {
+                    println!("{}", e);
+                    return HttpResponse::InternalServerError().body(e.to_string());
+                }
+            };
+            HttpResponse::Ok().json(vote_results)
+        },
+        VoteStatus::DoesNotExist => HttpResponse::NoContent().finish(),
+    }
 }
 
 #[post("/filecoin/vote/{fip_number}")]
