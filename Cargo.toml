@@ -1,0 +1,25 @@
+[package]
+name = "fip-voting"
+version = "1.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# WEB DEP
+actix-web = "4.3.1"
+
+# DB DEP
+redis = "0.23.0"
+
+# CRYPTO DEP
+k256 = {version = "0.13.1", features = ["ecdsa", "ecdsa-core"] }
+sha2 = "0.10.6"
+sha3 = "0.10.8"
+
+# MISC
+thiserror = "1.0.40"
+hex = "0.4.3"
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = "1.0.96"
+tokio = { version = "1.28.1", features = ["full"] }
