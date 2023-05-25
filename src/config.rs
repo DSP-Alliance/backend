@@ -1,32 +1,35 @@
-use std::env;
-
 use url::Url;
+use clap::{Parser, command, arg};
 
-pub struct Config {
+const VOTE_LENGTH: &str = "604800";
+const REDIS_DEFAULT_PATH: &str = "redis://127.0.0.1:6379";
+const DEFAULT_SERVE_ADDRESS: &str = "127.0.0.1:64239";
+
+#[derive(Parser, Clone)]
+#[command(name = "filecoin-vote")]
+pub struct Args {
+    #[arg(short, long, default_value = DEFAULT_SERVE_ADDRESS)]
+    pub serve_address: Url,
+    #[arg(short, long, default_value = REDIS_DEFAULT_PATH)]
     pub redis_path: Url,
+    #[arg(short, long, default_value = VOTE_LENGTH)]
     pub vote_length: u64,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            redis_path: Url::parse("redis://127.0.0.1:6379").unwrap(),
-            vote_length: 60 * 60 * 24 * 7,
-        }
+impl Args {
+    pub fn new() -> Self {
+        Self::parse()
     }
-}
 
-impl Config {
-    pub fn from_env() -> Self {
-        let redis_path = env::var("REDIS_PATH").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-        let redis_path = Url::parse(&redis_path).unwrap();
+    pub fn vote_length(&self) -> u64 {
+        self.vote_length
+    }
 
-        let vote_length = env::var("VOTE_LENGTH").unwrap_or_else(|_| "604800".to_string());
-        let vote_length = vote_length.parse().unwrap();
+    pub fn redis_path(&self) -> Url {
+        self.redis_path.clone()
+    }
 
-        Self {
-            redis_path,
-            vote_length,
-        }
+    pub fn serve_address(&self) -> Url {
+        self.serve_address.clone()
     }
 }

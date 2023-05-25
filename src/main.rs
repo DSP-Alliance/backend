@@ -1,28 +1,37 @@
-use actix_web::{
-    get, post, web, App, HttpResponse, HttpServer, Responder,
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+
+use fip_voting::{
+    config::Args,
+    redis::{Redis, VoteStatus},
+    votes::RecievedVote,
 };
 
-use fip_voting::{votes::RecievedVote, redis::{Redis, VoteStatus}};
+const OPEN_CONNECTION_ERROR: &str = "Error opening connection to in-memory database";
+const VOTE_STATUS_ERROR: &str = "Error getting vote status";
+const VOTE_RESULTS_ERROR: &str = "Error getting vote results";
+const VOTE_DESERIALIZE_ERROR: &str = "Error deserializing vote";
+const VOTE_RECOVER_ERROR: &str = "Error recovering vote";
+const VOTE_ADD_ERROR: &str = "Error adding vote";
 
 #[get("/filecoin/vote/{fip_number}")]
-async fn get_votes(fip_number: web::Path<u32>) -> impl Responder {
+async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl Responder {
     let num = fip_number.into_inner();
 
     // Open a connection to the redis database
-    let mut redis = match Redis::new() {
+    let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::InternalServerError().body(e.to_string());
+            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
         }
     };
 
     // Get the status of the vote from the database
-    let status = match redis.vote_status(num) {
+    let status = match redis.vote_status(num, config.vote_length()) {
         Ok(status) => status,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::InternalServerError().body(e.to_string());
+            return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
         }
     };
 
@@ -34,23 +43,27 @@ async fn get_votes(fip_number: web::Path<u32>) -> impl Responder {
                 Ok(results) => results,
                 Err(e) => {
                     println!("{}", e);
-                    return HttpResponse::InternalServerError().body(e.to_string());
+                    return HttpResponse::InternalServerError().body(VOTE_RESULTS_ERROR);
                 }
             };
             HttpResponse::Ok().json(vote_results)
-        },
+        }
         VoteStatus::DoesNotExist => HttpResponse::NoContent().finish(),
     }
 }
 
 #[post("/filecoin/vote/{fip_number}")]
-async fn register_vote<'a>(body: web::Bytes, fip_number: web::Path<u32>) -> impl Responder {
+async fn register_vote<'a>(
+    body: web::Bytes,
+    fip_number: web::Path<u32>,
+    config: web::Data<Args>,
+) -> impl Responder {
     // Deserialize the body into the vote struct
     let vote: RecievedVote = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::BadRequest().body(e.to_string());
+            return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
         }
     };
 
@@ -59,16 +72,16 @@ async fn register_vote<'a>(body: web::Bytes, fip_number: web::Path<u32>) -> impl
         Ok(vote) => vote,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::BadRequest().body(e.to_string());
+            return HttpResponse::BadRequest().body(VOTE_RECOVER_ERROR);
         }
     };
 
     // Open a connection to the redis database
-    let mut redis = match Redis::new() {
+    let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::InternalServerError().body(e.to_string());
+            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
         }
     };
 
@@ -77,7 +90,7 @@ async fn register_vote<'a>(body: web::Bytes, fip_number: web::Path<u32>) -> impl
         Ok(_) => (),
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::InternalServerError().body(e.to_string());
+            return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
         }
     }
 
@@ -86,9 +99,18 @@ async fn register_vote<'a>(body: web::Bytes, fip_number: web::Path<u32>) -> impl
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| App::new().service(get_votes).service(register_vote))
-        .bind("127.0.0.1:64459")?
-        .run()
-        .await
+    // Parse the command line arguments
+    let args = fip_voting::config::Args::new();
+    let serve_address = args.serve_address();
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(args.clone()))
+            .service(get_votes)
+            .service(register_vote)
+    })
+    .bind(serve_address.to_string())?
+    .run()
+    .await
 }
 // 873126EDD5241C3B342B99B47DE787D8DC21AE3D003D2BB650FC0A6FCB42256021F8530396F4C4AFBF1390B1BDBD48355FD0FAF00C13145545AE52A0ACD1DE5C

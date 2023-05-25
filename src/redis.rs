@@ -4,6 +4,7 @@ use std::{mem::MaybeUninit, time};
 
 use redis::{Commands, Connection, RedisError};
 use serde::Serialize;
+use url::Url;
 
 use crate::votes::{Vote, VoteOption};
 
@@ -57,9 +58,8 @@ struct VoteResults {
 */
 
 impl Redis {
-    pub fn new() -> Result<Redis, RedisError> {
-        let redis_path = crate::config::Config::from_env().redis_path;
-        let client = redis::Client::open(redis_path)?;
+    pub fn new(path: impl Into<Url>) -> Result<Redis, RedisError> {
+        let client = redis::Client::open(path.into())?;
         let con = client.get_connection()?;
 
         Ok(Self { con })
@@ -133,18 +133,16 @@ impl Redis {
             abstain_storage_size: 0,
         };
 
-        let json = match serde_json::to_string(&results) {
-            Ok(j) => j,
-            Err(_) => return Err(RedisError::from((
+        match serde_json::to_string(&results) {
+            Ok(j) => Ok(j),
+            Err(_) => Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Error serializing vote results",
             ))),
-        };
-
-        Ok(json)
+        }
     }
 
-    pub fn vote_status(&mut self, fip_number: impl Into<u32>) -> Result<VoteStatus, RedisError> {
+    pub fn vote_status(&mut self, fip_number: impl Into<u32>, vote_length: impl Into<u64>) -> Result<VoteStatus, RedisError> {
         let num = fip_number.into();
         let vote_key = LookupKey::FipNumber(num).to_bytes();
         let time_key = LookupKey::Timestamp(num).to_bytes();
@@ -160,22 +158,20 @@ impl Redis {
         }
 
         // Check if the vote is still open
-        let time_start: u64 = self.con.get::<Vec<u8>, u64>(time_key)?;
+        let time_start: u64 = self.vote_start(num)?;
         let now = time::SystemTime::now()
             .duration_since(time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        // Get current config for voting period
-        let vote_length = crate::config::Config::from_env().vote_length;
 
-        if now - time_start < vote_length {
+        if now - time_start < vote_length.into() {
             return Ok(VoteStatus::Open);
         } else {
             return Ok(VoteStatus::Closed);
         }
     }
 
-    pub fn vote_start(&mut self, fip_number: impl Into<u32>) -> Result<u64, RedisError> {
+    fn vote_start(&mut self, fip_number: impl Into<u32>) -> Result<u64, RedisError> {
         let key = LookupKey::Timestamp(fip_number.into()).to_bytes();
         let timestamp: u64 = self.con.get::<Vec<u8>, u64>(key)?;
         Ok(timestamp)
