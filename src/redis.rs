@@ -103,12 +103,6 @@ impl Redis {
     /                                     GETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    fn votes(&mut self, fip_number: impl Into<u32>) -> Result<Vec<Vote>, RedisError> {
-        let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
-        let votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key)?;
-        Ok(votes)
-    }
-
     pub fn vote_results(&mut self, fip_number: impl Into<u32>) -> Result<String, RedisError> {
         let mut yay = 0;
         let mut nay = 0;
@@ -175,6 +169,12 @@ impl Redis {
         let key = LookupKey::Timestamp(fip_number.into()).to_bytes();
         let timestamp: u64 = self.con.get::<Vec<u8>, u64>(key)?;
         Ok(timestamp)
+    }
+
+    fn votes(&mut self, fip_number: impl Into<u32>) -> Result<Vec<Vote>, RedisError> {
+        let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
+        let votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key)?;
+        Ok(votes)
     }
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/

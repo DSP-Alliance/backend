@@ -1,17 +1,18 @@
 use std::time;
 
-use hex::FromHexError;
-use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use redis::{from_redis_value, FromRedisValue, ToRedisArgs};
 use serde::Deserialize;
-use sha2::{
-    digest::{core_api::CoreWrapper, generic_array::GenericArray},
-    Digest,
-};
-use sha3::{Keccak256, Keccak256Core};
 use thiserror::Error;
 
-type Address = String;
+use ic_verify_bls_signature::{PublicKey, Signature};
+
+extern crate base64;
+extern crate bls12_381 as bls;
+
+use base64::{
+    engine::general_purpose,
+    Engine as _,
+};
 
 pub enum VoteOption {
     Yay,
@@ -23,7 +24,7 @@ const YAY: VoteOption = VoteOption::Yay;
 const NAY: VoteOption = VoteOption::Nay;
 const ABSTAIN: VoteOption = VoteOption::Abstain;
 
-const VOTE_OPTIONS: [VoteOption; 3] = [YAY, NAY, ABSTAIN];
+const VOTE_OPTIONS: [u8; 3] = [YAY as u8, NAY as u8, ABSTAIN as u8];
 
 #[derive(Debug, Error)]
 pub enum VoteError {
@@ -31,18 +32,19 @@ pub enum VoteError {
     InvalidVoteOption,
     #[error("Invalid signature")]
     InvalidSignature,
-    #[error("Invalid recid")]
-    InvalidRecid,
-    #[error("Invalid hex")]
-    InvalidHex(FromHexError),
+    #[error("Invalid public key")]
+    InvalidKey,
+    #[error("Invalid base64 encoding")]
+    InvalidBase64Encoding,
 }
 
-impl VoteOption {
-    fn digest(&self) -> CoreWrapper<Keccak256Core> {
-        match self {
-            VoteOption::Yay => Keccak256::new_with_prefix(b"0"),
-            VoteOption::Nay => Keccak256::new_with_prefix(b"1"),
-            VoteOption::Abstain => Keccak256::new_with_prefix(b"2"),
+impl From<u8> for VoteOption {
+    fn from(byte: u8) -> Self {
+        match byte {
+            0 => VoteOption::Yay,
+            1 => VoteOption::Nay,
+            2 => VoteOption::Abstain,
+            _ => panic!("Invalid vote option"),
         }
     }
 }
@@ -50,53 +52,57 @@ impl VoteOption {
 pub struct Vote {
     pub choice: VoteOption,
     timestamp: u64,
-    voter: VerifyingKey,
+    voter: PublicKey,
+    worker_addr: String,
 }
 
 #[derive(Deserialize)]
 pub struct RecievedVote {
-    signature: Address,
-    recid: u8,
+    signature: String,
+    pk: String,
+    worker_address: String,
 }
 
 impl RecievedVote {
     pub fn recover_vote(&self) -> Result<Vote, VoteError> {
-        let (sig, recid) = self.signature()?;
-
-        let mut vote: Option<(VoteOption, VerifyingKey)> = None;
-        for opt in VOTE_OPTIONS {
-            let digest = opt.digest();
-            match VerifyingKey::recover_from_digest(digest, &sig, recid) {
-                Ok(key) => vote = Some((opt, key)),
-                Err(_) => continue,
-            };
-        }
-
-        match vote {
-            Some(vote) => Ok(Vote {
-                choice: vote.0,
-                timestamp: time::SystemTime::now()
-                    .duration_since(time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                voter: vote.1,
-            }),
-            None => Err(VoteError::InvalidVoteOption),
-        }
-    }
-
-    fn signature(&self) -> Result<(Signature, RecoveryId), VoteError> {
-        let sig_vec = hex::decode(&self.signature).map_err(|e| VoteError::InvalidHex(e))?;
-        if sig_vec.len() != 64 {
-            return Err(VoteError::InvalidSignature);
-        }
-        let sig = GenericArray::from_slice(&sig_vec);
-        let recid = match RecoveryId::from_byte(self.recid) {
-            Some(recid) => recid,
-            None => return Err(VoteError::InvalidRecid),
+        let pubk_bytes = match general_purpose::STANDARD.decode(&self.pk) {
+            Ok(bytes) => bytes,
+            Err(_) => return Err(VoteError::InvalidBase64Encoding),
         };
 
-        Ok((Signature::from_bytes(&sig).unwrap(), recid))
+        let pubkey = match PublicKey::deserialize(&pubk_bytes) {
+            Ok(pubkey) => pubkey,
+            Err(_) => return Err(VoteError::InvalidKey),
+        };
+
+        let sig_bytes = match general_purpose::STANDARD.decode(&self.signature) {
+            Ok(bytes) => bytes,
+            Err(_) => return Err(VoteError::InvalidBase64Encoding),
+        };
+
+        let sig = match Signature::deserialize(&sig_bytes) {
+            Ok(sig) => sig,
+            Err(_) => return Err(VoteError::InvalidSignature),
+        };
+
+        for msg in VOTE_OPTIONS {
+            match pubkey.verify(&[msg], &sig) {
+                Ok(_) => {
+                    return Ok(Vote {
+                        choice: msg.into(),
+                        timestamp: time::SystemTime::now()
+                            .duration_since(time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
+                        voter: pubkey,
+                        worker_addr: self.worker_address.clone(),
+                    });
+                }
+                Err(_) => (),
+            }
+        }
+
+        return Err(VoteError::InvalidVoteOption);
     }
 }
 
@@ -141,30 +147,29 @@ impl FromRedisValue for Vote {
             )));
         }
 
-        let choice = match &args[0] {
-            0 => YAY,
-            1 => NAY,
-            2 => ABSTAIN,
-            _ => return Err(redis::RedisError::from((
-                redis::ErrorKind::TypeError,
-                "Unknown vote option",
-            ))),
-        };
+        let choice: VoteOption = args[0].into();
 
-        let timestamp = u64::from_be_bytes([args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]]);
+        let timestamp = u64::from_be_bytes([
+            args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8],
+        ]);
 
-        let voter = match VerifyingKey::from_sec1_bytes(&args[9..73]) {
+        let voter = match PublicKey::deserialize(&args[9..105]) {
             Ok(voter) => voter,
-            Err(_) => return Err(redis::RedisError::from((
-                redis::ErrorKind::TypeError,
-                "Invalid voter key",
-            ))),
+            Err(_) => {
+                return Err(redis::RedisError::from((
+                    redis::ErrorKind::TypeError,
+                    "Invalid voter key",
+                )))
+            }
         };
-        
+
+        let worker_addr = String::from_utf8(args[105..].to_vec()).unwrap();
+
         Ok(Vote {
             choice,
             timestamp,
             voter,
+            worker_addr,
         })
     }
 }
@@ -181,7 +186,8 @@ impl ToRedisArgs for Vote {
             VoteOption::Abstain => 2u8,
         });
         args.extend_from_slice(&self.timestamp.to_be_bytes());
-        args.extend_from_slice(&self.voter.to_sec1_bytes());
+        args.extend_from_slice(&self.voter.serialize());
+        args.extend_from_slice(&self.worker_addr.as_bytes());
 
         args.write_redis_args(out);
     }

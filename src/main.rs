@@ -48,12 +48,12 @@ async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl 
             };
             HttpResponse::Ok().json(vote_results)
         }
-        VoteStatus::DoesNotExist => HttpResponse::NoContent().finish(),
+        VoteStatus::DoesNotExist => HttpResponse::NotFound().finish(),
     }
 }
 
 #[post("/filecoin/vote/{fip_number}")]
-async fn register_vote<'a>(
+async fn register_vote(
     body: web::Bytes,
     fip_number: web::Path<u32>,
     config: web::Data<Args>,
@@ -100,7 +100,7 @@ async fn register_vote<'a>(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Parse the command line arguments
-    let args = fip_voting::config::Args::new();
+    let args = Args::new();
     let serve_address = args.serve_address();
 
     HttpServer::new(move || {
