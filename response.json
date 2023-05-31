@@ -1,0 +1,15 @@
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "MinerPower": {
+            "RawBytePower": "160185100271616",
+            "QualityAdjPower": "1041617200775168"
+        },
+        "TotalPower": {
+            "RawBytePower": "13826419089343512576",
+            "QualityAdjPower": "24103298992645144576"
+        },
+        "HasMinPower": true
+    },
+    "id": 1
+}

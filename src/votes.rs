@@ -13,17 +13,19 @@ use base64::{
     Engine as _,
 };
 
-pub enum VoteOption {
-    Yay,
-    Nay,
-    Abstain,
-}
+use crate::storage::fetch_storage_amount;
 
 const YAY: VoteOption = VoteOption::Yay;
 const NAY: VoteOption = VoteOption::Nay;
 const ABSTAIN: VoteOption = VoteOption::Abstain;
 
 const VOTE_OPTIONS: [u8; 3] = [YAY as u8, NAY as u8, ABSTAIN as u8];
+
+pub enum VoteOption {
+    Yay,
+    Nay,
+    Abstain,
+}
 
 #[derive(Debug, Error)]
 pub enum VoteError {
@@ -35,6 +37,8 @@ pub enum VoteError {
     InvalidKey,
     #[error("Invalid base64 encoding")]
     InvalidBase64Encoding,
+    #[error("Could not fetch storage size")]
+    InvalidStorageFetch,
 }
 
 impl From<u8> for VoteOption {
@@ -52,6 +56,7 @@ pub struct Vote {
     pub choice: VoteOption,
     timestamp: u64,
     voter: PublicKey,
+    raw_byte_power: u128,
     worker_addr: String,
 }
 
@@ -63,7 +68,7 @@ pub struct RecievedVote {
 }
 
 impl RecievedVote {
-    pub fn recover_vote(&self) -> Result<Vote, VoteError> {
+    pub async fn recover_vote(&self) -> Result<Vote, VoteError> {
         let pubk_bytes = match general_purpose::STANDARD.decode(&self.pk) {
             Ok(bytes) => bytes,
             Err(_) => return Err(VoteError::InvalidBase64Encoding),
@@ -84,6 +89,16 @@ impl RecievedVote {
             Err(_) => return Err(VoteError::InvalidSignature),
         };
 
+        let miner_power = match fetch_storage_amount(self.worker_address.clone()).await {
+            Ok(miner_power) => {
+                match miner_power.raw_byte_power.parse::<u128>() {
+                    Ok(raw_byte_power) => raw_byte_power,
+                    Err(_) => return Err(VoteError::InvalidStorageFetch),
+                }
+            },
+            Err(_) => return Err(VoteError::InvalidSignature),
+        };
+
         for msg in VOTE_OPTIONS {
             match pubkey.verify(&[msg], &sig) {
                 Ok(_) => {
@@ -94,6 +109,7 @@ impl RecievedVote {
                             .unwrap()
                             .as_secs(),
                         voter: pubkey,
+                        raw_byte_power: miner_power,
                         worker_addr: self.worker_address.clone(),
                     });
                 }
@@ -162,12 +178,19 @@ impl FromRedisValue for Vote {
             }
         };
 
+        let raw_byte_power = u128::from_be_bytes([
+            args[105], args[106], args[107], args[108], args[109], args[110], args[111],
+            args[112], args[113], args[114], args[115], args[116], args[117], args[118],
+            args[119], args[120]
+        ]);
+
         let worker_addr = String::from_utf8(args[105..].to_vec()).unwrap();
 
         Ok(Vote {
             choice,
             timestamp,
             voter,
+            raw_byte_power,
             worker_addr,
         })
     }
@@ -186,6 +209,7 @@ impl ToRedisArgs for Vote {
         });
         args.extend_from_slice(&self.timestamp.to_be_bytes());
         args.extend_from_slice(&self.voter.serialize());
+        args.extend_from_slice(&self.raw_byte_power.to_be_bytes());
         args.extend_from_slice(&self.worker_addr.as_bytes());
 
         args.write_redis_args(out);

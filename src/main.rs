@@ -68,7 +68,7 @@ async fn register_vote(
     };
 
     // Recover the vote
-    let vote = match vote.recover_vote() {
+    let vote = match vote.recover_vote().await {
         Ok(vote) => vote,
         Err(e) => {
             println!("{}", e);
