@@ -7,7 +7,6 @@ use thiserror::Error;
 use ic_verify_bls_signature::{PublicKey, Signature};
 
 extern crate base64;
-extern crate bls12_381 as bls;
 
 use base64::{
     engine::general_purpose,
