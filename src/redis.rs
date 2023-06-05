@@ -209,13 +209,13 @@ impl Redis {
         Ok(())
     }
 
-    fn flush_vote(&mut self, fip_number: impl Into<u32>) -> Result<(), RedisError> {
+    pub fn flush_vote(&mut self, fip_number: impl Into<u32>) -> Result<(), RedisError> {
         let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
         self.con.del::<Vec<u8>, ()>(key)?;
         Ok(())
     }
 
-    fn flush_all_votes(&mut self) -> Result<(), RedisError> {
+    pub fn flush_all_votes(&mut self) -> Result<(), RedisError> {
         let keys: Vec<Vec<u8>> = self.con.keys("*")?;
         for key in keys {
             self.con.del::<Vec<u8>, ()>(key)?;
@@ -245,7 +245,7 @@ mod tests {
     async fn redis_votes() {
         let mut redis = redis();
 
-        let res = redis.votes(1u32);
+        let res = redis.votes(5u32);
 
         match res {
             Ok(_) => {},
@@ -262,7 +262,10 @@ mod tests {
     async fn redis_vote_start() {
         let mut redis = redis();
 
-        let res = redis.vote_start(1u32);
+        let vote = yay_vote().recover_vote().await.unwrap();
+        assert!(redis.add_vote(4u32, vote).is_ok());
+
+        let res = redis.vote_start(4u32);
 
         match res {
             Ok(_) => {},
@@ -275,10 +278,10 @@ mod tests {
         let mut redis = redis();
 
         let vote = yay_vote().recover_vote().await.unwrap();
-        assert!(redis.add_vote(1u32, vote).is_ok());
+        assert!(redis.add_vote(3u32, vote).is_ok());
 
 
-        let vote_start = redis.vote_start(1u32).unwrap();
+        let vote_start = redis.vote_start(3u32).unwrap();
 
         tokio::time::sleep(time::Duration::from_secs(2)).await;
 
@@ -290,7 +293,7 @@ mod tests {
         let ongoing = time_now - vote_start + 1;
         let concluded = time_now - vote_start - 1;
 
-        let res = redis.vote_status(1u32, ongoing);
+        let res = redis.vote_status(3u32, ongoing);
 
         match res {
             Ok(_) => {},
@@ -298,7 +301,7 @@ mod tests {
         }
         assert_eq!(res.unwrap(), VoteStatus::InProgress);
 
-        let res = redis.vote_status(1u32, concluded);
+        let res = redis.vote_status(3u32, concluded);
 
         match res {
             Ok(_) => {},
@@ -321,7 +324,7 @@ mod tests {
 
         let vote = yay_vote().recover_vote().await.unwrap();
 
-        let res = redis.add_vote(1u32, vote);
+        let res = redis.add_vote(2u32, vote);
 
         match res {
             Ok(_) => {},

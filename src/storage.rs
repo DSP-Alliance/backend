@@ -1,11 +1,10 @@
-use bls_signatures::PublicKey;
 use jsonrpc::Response;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
 const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
-const TESTNET_RPC: &str = "https://calibration.node.glif.io";
+const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
 
 pub enum Network {
     Mainnet,
@@ -22,6 +21,12 @@ struct Results {
 pub struct MinerPower {
     #[serde(rename = "RawBytePower")]
     pub raw_byte_power: String,
+}
+
+impl MinerPower {
+    pub fn to_f64(&self) -> u128 {
+        self.raw_byte_power.parse::<u128>().unwrap()
+    }
 }
 
 pub async fn verify_id(id: String, ntw: Network) -> Result<bool, reqwest::Error> {
@@ -77,6 +82,8 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<MinerPo
         .json::<Response>()
         .await?;
 
+    println!("{:?}", response);
+
     let result = match response.result {
         Some(result) => result,
         None => return Err(StorageFetchError::NoResult),
@@ -111,19 +118,23 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn storage_fetch_storage_amount() {
+    async fn storage_fetch_storage_amount_mainnet() {
         let res = fetch_storage_amount("f01240".to_string(), Network::Mainnet).await;
 
         assert!(res.is_ok());
+    }
 
-        let res = fetch_storage_amount("t06016".to_string(), Network::Testnet).await;
+    #[tokio::test]
+    async fn storage_fetch_storage_amount_testnet() {
+        let res = fetch_storage_amount("t06024".to_string(), Network::Testnet).await;
+
         println!("{:?}", res);
         assert!(res.is_ok());
     }
 
     #[tokio::test]
     async fn storage_verify_id() {
-        let res = verify_id("t06016".to_string(), Network::Testnet).await.unwrap();
+        let res = verify_id("t06024".to_string(), Network::Testnet).await.unwrap();
 
         println!("{:?}", res);
     }

@@ -9,7 +9,7 @@ use bls_signatures::{PublicKey, Signature, Serialize};
 
 extern crate base64;
 
-use crate::storage::fetch_storage_amount;
+use crate::storage::{fetch_storage_amount, Network};
 
 const YAY: VoteOption = VoteOption::Yay;
 const NAY: VoteOption = VoteOption::Nay;
@@ -73,20 +73,17 @@ pub struct RecievedVote {
 
 impl RecievedVote {
     pub async fn recover_vote(&self) -> Result<Vote, VoteError> {
-        let pubkey = self.pub_key()?;
+        let (pubkey, ntw) = self.pub_key()?;
 
         let sig = self.sig()?;
 
-/*
-        let miner_power = match fetch_storage_amount(self.sp_id.clone()).await {
+        let miner_power = match fetch_storage_amount(self.sp_id.clone(), ntw).await {
             Ok(miner_power) => match miner_power.raw_byte_power.parse::<u128>() {
                 Ok(raw_byte_power) => raw_byte_power,
                 Err(_) => return Err(VoteError::InvalidStorageFetch),
             },
             Err(_) => return Err(VoteError::InvalidSignature),
         };
-
- */
 
         for msg in VOTE_OPTIONS {
             match pubkey.verify(sig, &[msg]) {
@@ -98,7 +95,7 @@ impl RecievedVote {
                             .unwrap()
                             .as_secs(),
                         voter: pubkey,
-                        raw_byte_power: 0,
+                        raw_byte_power: miner_power,
                         worker_addr: self.worker_address.clone(),
                     });
                 }
@@ -109,9 +106,11 @@ impl RecievedVote {
         return Err(VoteError::InvalidVoteOption);
     }
 
-    fn pub_key(&self) -> Result<PublicKey, VoteError> {
+    fn pub_key(&self) -> Result<(PublicKey, Network), VoteError> {
         let testnet_base32 = Regex::new(r"(?i)^[t][3][A-Z2-7]{84}$").unwrap();
         let mainnet_base32 = Regex::new(r"(?i)^[f][3][A-Z2-7]{84}$").unwrap();
+        
+        let ntw: Network;
 
         let bytes = match testnet_base32.is_match(&self.worker_address) {
             true => {
@@ -119,7 +118,10 @@ impl RecievedVote {
                     base32::Alphabet::RFC4648 { padding: false },
                     &self.worker_address[2..self.worker_address.len() - 6],
                 ) {
-                    Some(bytes) => bytes,
+                    Some(bytes) => {
+                        ntw = Network::Testnet;
+                        bytes
+                    },
                     None => return Err(VoteError::InvalidAddressEncoding),
                 }
             }
@@ -129,7 +131,10 @@ impl RecievedVote {
                         base32::Alphabet::RFC4648 { padding: false },
                         &self.worker_address[2..self.worker_address.len() - 6],
                     ) {
-                        Some(bytes) => bytes,
+                        Some(bytes) => {
+                            ntw = Network::Mainnet;
+                            bytes
+                        },
                         None => return Err(VoteError::InvalidAddressEncoding),
                     }
                 }
@@ -138,7 +143,7 @@ impl RecievedVote {
         };
 
         match PublicKey::from_bytes(bytes.as_slice()) {
-            Ok(pubkey) => Ok(pubkey),
+            Ok(pubkey) => Ok((pubkey, ntw)),
             Err(_) => Err(VoteError::InvalidKey),
         }
     }
