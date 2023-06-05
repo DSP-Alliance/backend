@@ -1,3 +1,4 @@
+use bls_signatures::PublicKey;
 use jsonrpc::Response;
 use reqwest::Client;
 use serde::Deserialize;
@@ -17,7 +18,31 @@ pub struct MinerPower {
     pub raw_byte_power: String,
 }
 
-pub async fn fetch_storage_amount(worker_address: String) -> Result<MinerPower, StorageFetchError> {
+pub async fn verify_id(id: String) -> Result<bool, reqwest::Error> {
+    let client = Client::new();
+    let response = client
+        .post(CHAIN_LOVE)
+        .header("Content-Type", "application/json")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "Filecoin.StateLookupID",
+            "params": [
+                id,
+                null
+            ],
+            "id": 1
+        }))
+        .send()
+        .await?
+        .json::<Response>()
+        .await?;
+
+    println!("{:?}", response);
+
+    Ok(false)
+}
+
+pub async fn fetch_storage_amount(sp_id: String) -> Result<MinerPower, StorageFetchError> {
     let client = Client::new();
     let response = client
         .post(CHAIN_LOVE)
@@ -26,7 +51,7 @@ pub async fn fetch_storage_amount(worker_address: String) -> Result<MinerPower, 
             "jsonrpc": "2.0",
             "method": "Filecoin.StateMinerPower",
             "params": [
-                worker_address,
+                sp_id,
                 null
             ],
             "id": 1
@@ -72,6 +97,13 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_storage_amount() {
         let res = fetch_storage_amount("f01240".to_string()).await.unwrap();
+
+        println!("{:?}", res);
+    }
+
+    #[tokio::test]
+    async fn test_verify_id() {
+        let res = verify_id("t06016".to_string()).await.unwrap();
 
         println!("{:?}", res);
     }

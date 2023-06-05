@@ -15,16 +15,18 @@ reqwest = { version = "0.11.18", features = ["json"] }
 redis = "0.23.0"
 
 # CRYPTO DEP
-ic-verify-bls-signature = { version = "0.2.0", git = " https://github.com/dfinity/verify-bls-signatures" }
+bls-signatures = { version = "0.14.0", git = "https://github.com/filecoin-project/bls-signatures" }
 
 # SERIALIZATION DEP
 hex = "0.4.3"
 base64 = "0.21.2"
+base32 = "0.4.0"
 serde = { version = "1.0.163", features = ["derive"] }
 serde_json = { version = "1.0.96", features = ["raw_value"] }
 jsonrpc = "0.15.0"
 
 # MISC
+regex = "1.8.3"
 thiserror = "1.0.40"
 tokio = { version = "1.28.1", features = ["full"] }
 clap = { version = "4.3.0", features = ["derive"] }

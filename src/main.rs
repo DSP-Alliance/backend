@@ -109,8 +109,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_votes)
             .service(register_vote)
     })
-    .bind(serve_address.to_string())?
+    .bind(("127.0.0.1", 51723))?
     .run()
     .await
 }
-// 873126EDD5241C3B342B99B47DE787D8DC21AE3D003D2BB650FC0A6FCB42256021F8530396F4C4AFBF1390B1BDBD48355FD0FAF00C13145545AE52A0ACD1DE5C

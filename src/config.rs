@@ -3,7 +3,7 @@ use clap::{Parser, command, arg};
 
 const VOTE_LENGTH: &str = "604800";
 const REDIS_DEFAULT_PATH: &str = "redis://127.0.0.1:6379";
-const DEFAULT_SERVE_ADDRESS: &str = "127.0.0.1:64239";
+const DEFAULT_SERVE_ADDRESS: &str = "http://127.0.0.1:51634";
 
 #[derive(Parser, Clone)]
 #[command(name = "filecoin-vote")]
