@@ -12,10 +12,11 @@ pub struct Redis {
     con: Connection,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum VoteStatus {
     DoesNotExist,
-    Open,
-    Closed,
+    InProgress,
+    Concluded,
 }
 
 enum LookupKey {
@@ -159,9 +160,9 @@ impl Redis {
             .as_secs();
 
         if now - time_start < vote_length.into() {
-            return Ok(VoteStatus::Open);
+            return Ok(VoteStatus::InProgress);
         } else {
-            return Ok(VoteStatus::Closed);
+            return Ok(VoteStatus::Concluded);
         }
     }
 
@@ -192,9 +193,156 @@ impl Redis {
             return Ok(());
         }
 
-        let mut votes: Vec<Vote> = self.con.get::<u32, Vec<Vote>>(num)?;
+        let key = LookupKey::FipNumber(num.into()).to_bytes();
+
+        let mut votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key.clone())?;
+        println!("fetched votes");
+        if votes.contains(&vote) {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Vote already exists",
+            )));
+        }
         votes.push(vote);
-        self.con.set::<u32, Vec<Vote>, ()>(num, votes)?;
+        self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
+        println!("set votes");
         Ok(())
+    }
+
+    fn flush_vote(&mut self, fip_number: impl Into<u32>) -> Result<(), RedisError> {
+        let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
+        self.con.del::<Vec<u8>, ()>(key)?;
+        Ok(())
+    }
+
+    fn flush_all_votes(&mut self) -> Result<(), RedisError> {
+        let keys: Vec<Vec<u8>> = self.con.keys("*")?;
+        for key in keys {
+            self.con.del::<Vec<u8>, ()>(key)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::votes::test_votes::*;
+
+    fn redis() -> Redis {
+        let url = Url::parse("redis://127.0.0.1:6379").unwrap();
+        let mut redis = Redis::new(url).unwrap();
+
+        for i in 1..=10 {
+            redis.flush_vote(i as u32).unwrap();
+        }
+
+        redis
+    }
+
+    #[tokio::test]
+    async fn redis_votes() {
+        let mut redis = redis();
+
+        let res = redis.votes(1u32);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
+
+        // let votes = res.unwrap();
+        // for v in votes {
+        //     println!("{}", v);
+        // }
+    }
+
+    #[tokio::test]
+    async fn redis_vote_start() {
+        let mut redis = redis();
+
+        let res = redis.vote_start(1u32);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn redis_vote_status() {
+        let mut redis = redis();
+
+        let vote = yay_vote().recover_vote().await.unwrap();
+        assert!(redis.add_vote(1u32, vote).is_ok());
+
+
+        let vote_start = redis.vote_start(1u32).unwrap();
+
+        tokio::time::sleep(time::Duration::from_secs(2)).await;
+
+        let time_now = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let ongoing = time_now - vote_start + 1;
+        let concluded = time_now - vote_start - 1;
+
+        let res = redis.vote_status(1u32, ongoing);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
+        assert_eq!(res.unwrap(), VoteStatus::InProgress);
+
+        let res = redis.vote_status(1u32, concluded);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
+        assert_eq!(res.unwrap(), VoteStatus::Concluded);
+
+        let res = redis.vote_status(1234089398u32, concluded);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
+        assert_eq!(res.unwrap(), VoteStatus::DoesNotExist);
+    }
+
+    #[tokio::test]
+    async fn redis_add_vote() {
+        let mut redis = redis();
+
+        let vote = yay_vote().recover_vote().await.unwrap();
+
+        let res = redis.add_vote(1u32, vote);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn redis_vote_results() {
+        let mut redis = redis();
+        let vote = yay_vote().recover_vote().await.unwrap();
+
+        let res = redis.add_vote(1u32, vote);
+        println!("{:?}", res);
+        assert!(res.is_ok());
+
+        let res = redis.vote_results(1u32);
+
+        match res {
+            Ok(_) => {},
+            Err(e) => panic!("Error: {}", e),
+        }
     }
 }

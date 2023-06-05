@@ -1,7 +1,7 @@
 use url::Url;
 use clap::{Parser, command, arg};
 
-const VOTE_LENGTH: &str = "604800";
+const VOTE_LENGTH: &str = "60";
 const REDIS_DEFAULT_PATH: &str = "redis://127.0.0.1:6379";
 const DEFAULT_SERVE_ADDRESS: &str = "http://127.0.0.1:51634";
 

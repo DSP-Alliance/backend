@@ -4,7 +4,13 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
-const CHAIN_LOVE: &str = "https://api.chain.love/rpc/v0";
+const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
+const TESTNET_RPC: &str = "https://calibration.node.glif.io";
+
+pub enum Network {
+    Mainnet,
+    Testnet,
+}
 
 #[derive(Deserialize, Debug)]
 struct Results {
@@ -18,10 +24,16 @@ pub struct MinerPower {
     pub raw_byte_power: String,
 }
 
-pub async fn verify_id(id: String) -> Result<bool, reqwest::Error> {
+pub async fn verify_id(id: String, ntw: Network) -> Result<bool, reqwest::Error> {
     let client = Client::new();
+
+    let rpc = match ntw {
+        Network::Mainnet => MAINNET_RPC,
+        Network::Testnet => TESTNET_RPC,
+    };
+
     let response = client
-        .post(CHAIN_LOVE)
+        .post(rpc)
         .header("Content-Type", "application/json")
         .json(&json!({
             "jsonrpc": "2.0",
@@ -42,10 +54,14 @@ pub async fn verify_id(id: String) -> Result<bool, reqwest::Error> {
     Ok(false)
 }
 
-pub async fn fetch_storage_amount(sp_id: String) -> Result<MinerPower, StorageFetchError> {
+pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<MinerPower, StorageFetchError> {
     let client = Client::new();
+    let rpc = match ntw {
+        Network::Mainnet => MAINNET_RPC,
+        Network::Testnet => TESTNET_RPC,
+    };
     let response = client
-        .post(CHAIN_LOVE)
+        .post(rpc)
         .header("Content-Type", "application/json")
         .json(&json!({
             "jsonrpc": "2.0",
@@ -95,15 +111,19 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_fetch_storage_amount() {
-        let res = fetch_storage_amount("f01240".to_string()).await.unwrap();
+    async fn storage_fetch_storage_amount() {
+        let res = fetch_storage_amount("f01240".to_string(), Network::Mainnet).await;
 
+        assert!(res.is_ok());
+
+        let res = fetch_storage_amount("t06016".to_string(), Network::Testnet).await;
         println!("{:?}", res);
+        assert!(res.is_ok());
     }
 
     #[tokio::test]
-    async fn test_verify_id() {
-        let res = verify_id("t06016".to_string()).await.unwrap();
+    async fn storage_verify_id() {
+        let res = verify_id("t06016".to_string(), Network::Testnet).await.unwrap();
 
         println!("{:?}", res);
     }

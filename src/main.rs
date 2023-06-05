@@ -37,8 +37,8 @@ async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl 
 
     // Return the appropriate response
     match status {
-        VoteStatus::Open => HttpResponse::Forbidden().finish(),
-        VoteStatus::Closed => {
+        VoteStatus::InProgress => HttpResponse::Forbidden().finish(),
+        VoteStatus::Concluded => {
             let vote_results = match redis.vote_results(num) {
                 Ok(results) => results,
                 Err(e) => {
