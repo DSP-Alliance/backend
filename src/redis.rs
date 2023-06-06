@@ -196,7 +196,7 @@ impl Redis {
         let key = LookupKey::FipNumber(num.into()).to_bytes();
 
         let mut votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key.clone())?;
-        println!("fetched votes");
+
         if votes.contains(&vote) {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,

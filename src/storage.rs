@@ -37,7 +37,7 @@ pub async fn verify_id(id: String, ntw: Network) -> Result<bool, reqwest::Error>
         Network::Testnet => TESTNET_RPC,
     };
 
-    let response = client
+    let _response = client
         .post(rpc)
         .header("Content-Type", "application/json")
         .json(&json!({
@@ -54,7 +54,6 @@ pub async fn verify_id(id: String, ntw: Network) -> Result<bool, reqwest::Error>
         .json::<Response>()
         .await?;
 
-    println!("{:?}", response);
 
     Ok(false)
 }
@@ -81,8 +80,6 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<MinerPo
         .await?
         .json::<Response>()
         .await?;
-
-    println!("{:?}", response);
 
     let result = match response.result {
         Some(result) => result,
