@@ -15,6 +15,8 @@ const VOTE_ADD_ERROR: &str = "Error adding vote";
 
 #[get("/filecoin/vote/{fip_number}")]
 async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl Responder {
+    println!("votes requested");
+
     let num = fip_number.into_inner();
 
     // Open a connection to the redis database
@@ -34,6 +36,8 @@ async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl 
             return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
         }
     };
+
+    println!("Vote status: {:?} for FIP: {}", status, num);
 
     // Return the appropriate response
     match status {
@@ -58,6 +62,9 @@ async fn register_vote(
     fip_number: web::Path<u32>,
     config: web::Data<Args>,
 ) -> impl Responder {
+    let num = fip_number.into_inner();
+
+    println!("Vote received for FIP: {}", num);
     // Deserialize the body into the vote struct
     let vote: RecievedVote = match serde_json::from_slice(&body) {
         Ok(v) => v,
@@ -66,6 +73,8 @@ async fn register_vote(
             return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
         }
     };
+
+    let spid = vote.sp_id.clone();
 
     // Recover the vote
     let vote = match vote.recover_vote().await {
@@ -85,14 +94,35 @@ async fn register_vote(
         }
     };
 
+    let status = match redis.vote_status(num, config.vote_length()) {
+        Ok(status) => status,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
+        }
+    };
+
+    match status {
+        VoteStatus::InProgress => (),
+        VoteStatus::Concluded => {
+            println!("Vote concluded for FIP: {}", num);
+            return HttpResponse::Forbidden().finish();
+        }
+        VoteStatus::DoesNotExist => (),
+    }
+
+    let choice = vote.choice.clone();
+
     // Add the vote to the database
-    match redis.add_vote(fip_number.into_inner(), vote) {
+    match redis.add_vote(num, vote) {
         Ok(_) => (),
         Err(e) => {
             println!("{}", e);
             return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
         }
     }
+
+    println!("Vote ({:?}) added for FIP: {} from Storage Provider: {}", choice, num, spid);
 
     HttpResponse::Ok().finish()
 }
@@ -102,6 +132,8 @@ async fn main() -> std::io::Result<()> {
     // Parse the command line arguments
     let args = Args::new();
     let serve_address = args.serve_address();
+
+    println!("Serving at {}", serve_address);
 
     HttpServer::new(move || {
         App::new()

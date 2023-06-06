@@ -348,4 +348,10 @@ mod tests {
             Err(e) => panic!("Error: {}", e),
         }
     }
+
+    #[tokio::test]
+    async fn redis_flush_database() {
+        let mut redis = redis();
+        redis.flush_all_votes().unwrap();
+    }
 }

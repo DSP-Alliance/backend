@@ -165,12 +165,13 @@ mod tests {
     async fn storage_fetch_storage_amount_mainnet() {
         let res = fetch_storage_amount("f01240".to_string(), Network::Mainnet).await;
 
+        println!("{:?}", res);
         assert!(res.is_ok());
     }
 
     #[tokio::test]
     async fn storage_fetch_storage_amount_testnet() {
-        let res = fetch_storage_amount("t06024".to_string(), Network::Testnet).await;
+        let res = fetch_storage_amount("t01000".to_string(), Network::Testnet).await;
 
         println!("{:?}", res);
         assert!(res.is_ok());

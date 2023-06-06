@@ -17,7 +17,7 @@ const ABSTAIN: VoteOption = VoteOption::Abstain;
 
 const VOTE_OPTIONS: [u8; 3] = [YAY as u8, NAY as u8, ABSTAIN as u8];
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum VoteOption {
     Yay,
     Nay,
@@ -66,7 +66,7 @@ pub struct Vote {
 pub struct RecievedVote {
     signature: String,
     worker_address: String,
-    sp_id: String,
+    pub sp_id: String,
 }
 
 // 0293eafdcd619bd6ae1a86185fc6dbb2e534fba9086183cb9aa2c3f6feceb9441ecd9297981f1c1d23cffa1730535fc8411298e1650364ca666f4558240ab585af8556b07729b3c3c202fb5ac4477016510f744e768c0d0fce320613e70d64c006
