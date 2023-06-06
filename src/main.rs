@@ -1,7 +1,7 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 
 use fip_voting::{
-    config::Args,
+    Args,
     redis::{Redis, VoteStatus},
     votes::RecievedVote,
 };
