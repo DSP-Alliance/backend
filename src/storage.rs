@@ -1,11 +1,12 @@
 use jsonrpc::Response;
 use reqwest::Client;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
 const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
 
+#[derive(Copy, Clone)]
 pub enum Network {
     Mainnet,
     Testnet,
@@ -18,31 +19,22 @@ struct Results {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct MinerPower {
+struct MinerPower {
     #[serde(rename = "RawBytePower")]
-    pub raw_byte_power: String,
+    raw_byte_power: String,
 }
 
-impl MinerPower {
-    pub fn to_f64(&self) -> u128 {
-        self.raw_byte_power.parse::<u128>().unwrap()
-    }
-}
-
-pub async fn verify_id(id: String, ntw: Network) -> Result<bool, reqwest::Error> {
+pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Result<bool, StorageFetchError> {
     let client = Client::new();
 
-    let rpc = match ntw {
-        Network::Mainnet => MAINNET_RPC,
-        Network::Testnet => TESTNET_RPC,
-    };
+    let rpc = ntw.rpc();
 
-    let _response = client
+    let response = client
         .post(rpc)
         .header("Content-Type", "application/json")
         .json(&json!({
             "jsonrpc": "2.0",
-            "method": "Filecoin.StateLookupID",
+            "method": "Filecoin.StateMinerInfo",
             "params": [
                 id,
                 null
@@ -54,11 +46,51 @@ pub async fn verify_id(id: String, ntw: Network) -> Result<bool, reqwest::Error>
         .json::<Response>()
         .await?;
 
+    let worker_id = match response.result {
+        Some(w) => {
+            let parsed_result: Value = serde_json::from_str(w.to_string().as_str())?;
 
-    Ok(false)
+            if let Some(worker_id) = parsed_result["Worker"].as_str() {
+                worker_id.to_string()
+            } else {
+                return Ok(false);
+            }
+        },
+        None => return Ok(false),
+    };
+
+    let response = client
+        .post(rpc)
+        .header("Content-Type", "application/json")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "Filecoin.StateAccountKey",
+            "params": [
+                worker_id,
+                null
+            ],
+            "id": 1
+        }))
+        .send()
+        .await?
+        .json::<Response>()
+        .await?;
+
+    match response.result {
+        Some(w) => {
+            let parsed_result: Value = serde_json::from_str(w.to_string().as_str())?;
+
+            if let Some(rec_worker_address) = parsed_result.as_str() {
+                Ok(rec_worker_address == worker_address)
+            } else {
+                Ok(false)
+            }
+        },
+        None => Ok(false),
+    }
 }
 
-pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<MinerPower, StorageFetchError> {
+pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<u128, StorageFetchError> {
     let client = Client::new();
     let rpc = match ntw {
         Network::Mainnet => MAINNET_RPC,
@@ -88,7 +120,7 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<MinerPo
 
     let res = serde_json::from_str::<Results>(result.to_string().as_str()).unwrap();
 
-    Ok(res.miner_power)
+    Ok(res.miner_power.to_u128())
 }
 
 #[derive(Debug)]
@@ -107,6 +139,21 @@ impl From<reqwest::Error> for StorageFetchError {
 impl From<serde_json::Error> for StorageFetchError {
     fn from(e: serde_json::Error) -> Self {
         StorageFetchError::Serde(e)
+    }
+}
+
+impl MinerPower {
+    pub fn to_u128(&self) -> u128 {
+        self.raw_byte_power.parse::<u128>().unwrap()
+    }
+}
+
+impl Network {
+    pub fn rpc(&self) -> &'static str {
+        match self {
+            Network::Mainnet => MAINNET_RPC,
+            Network::Testnet => TESTNET_RPC,
+        }
     }
 }
 
@@ -130,9 +177,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn storage_verify_id() {
-        let res = verify_id("t06024".to_string(), Network::Testnet).await.unwrap();
+    async fn storage_verify_id_testnet() {
+        let res = verify_id("t06024".to_string(), "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(), Network::Testnet).await.unwrap();
 
-        println!("{:?}", res);
+        assert!(res);
     }
+
+    #[tokio::test]
+    async fn storage_verify_id_mainnet() {
+        let res = verify_id("f01240".to_string(), "f3wzxynjiptyogm442qg4cv74czijfzj7fzymqx6gmr6yw6oojhmlg7qavplholgoeyiyxh2zostfrnc2w2mxq".to_string(), Network::Mainnet).await.unwrap();
+
+        assert!(res);
+    }
+
 }

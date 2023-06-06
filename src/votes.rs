@@ -9,7 +9,7 @@ use bls_signatures::{PublicKey, Signature, Serialize};
 
 extern crate base64;
 
-use crate::storage::{fetch_storage_amount, Network};
+use crate::storage::{fetch_storage_amount, Network, verify_id};
 
 const YAY: VoteOption = VoteOption::Yay;
 const NAY: VoteOption = VoteOption::Nay;
@@ -38,6 +38,8 @@ pub enum VoteError {
     InvalidSignatureEncoding,
     #[error("Could not fetch storage size")]
     InvalidStorageFetch,
+    #[error("Actor is not a miner")]
+    NotMiner,
 }
 
 impl From<u8> for VoteOption {
@@ -77,11 +79,17 @@ impl RecievedVote {
 
         let sig = self.sig()?;
 
+        let miner = match verify_id(self.sp_id.clone(), self.worker_address.clone(), ntw).await {
+            Ok(miner) => miner,
+            Err(_) => return Err(VoteError::InvalidSignature),
+        };
+
+        if !miner {
+            return Err(VoteError::NotMiner);
+        }
+
         let miner_power = match fetch_storage_amount(self.sp_id.clone(), ntw).await {
-            Ok(miner_power) => match miner_power.raw_byte_power.parse::<u128>() {
-                Ok(raw_byte_power) => raw_byte_power,
-                Err(_) => return Err(VoteError::InvalidStorageFetch),
-            },
+            Ok(miner_power) => miner_power,
             Err(_) => return Err(VoteError::InvalidSignature),
         };
 
@@ -304,7 +312,7 @@ pub mod test_votes {
         RecievedVote {
             signature: "029273117441cea29c532c57612c132a84e28cdd372b4b12a8aba50f06da4469fa6b5534ab27a8c844aeee259e085ecaf706c50a2b6a1d5e439d08cadb714a105f838fd00873249539bd939dca5758a7cd42f82822c8ad0c7cb45a16275634e398".to_string(),
             worker_address: "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(),
-            sp_id: "t06016".to_string()
+            sp_id: "t06024".to_string()
         }
     }
 
@@ -312,7 +320,7 @@ pub mod test_votes {
         RecievedVote {
             signature: "0293eafdcd619bd6ae1a86185fc6dbb2e534fba9086183cb9aa2c3f6feceb9441ecd9297981f1c1d23cffa1730535fc8411298e1650364ca666f4558240ab585af8556b07729b3c3c202fb5ac4477016510f744e768c0d0fce320613e70d64c006".to_string(),
             worker_address: "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(),
-            sp_id: "t06016".to_string()
+            sp_id: "t06024".to_string()
         }
     }
 
@@ -320,7 +328,7 @@ pub mod test_votes {
         RecievedVote {
             signature: "0295ce4b57f04994028b952c090b25a6f3979aa50b1604b91c25d769a18931b934380a303565e17ae1d8e2f3505b49d1fd120f5d3bd6ed6153d8fc13f988ea7453193ae67b84884bc5e537c55b45c8077ce8dd12fad3d09ecc62aa7f0695adff82".to_string(),
             worker_address: "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(),
-            sp_id: "t06016".to_string()
+            sp_id: "t06024".to_string()
         }
     }
 }
