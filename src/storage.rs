@@ -1,6 +1,5 @@
 use jsonrpc::Response;
 use reqwest::Client;
-use serde::Deserialize;
 use serde_json::{json, Value};
 
 const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
@@ -10,18 +9,6 @@ const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
 pub enum Network {
     Mainnet,
     Testnet,
-}
-
-#[derive(Deserialize, Debug)]
-struct Results {
-    #[serde(rename = "MinerPower")]
-    miner_power: MinerPower,
-}
-
-#[derive(Deserialize, Debug)]
-struct MinerPower {
-    #[serde(rename = "RawBytePower")]
-    raw_byte_power: String,
 }
 
 pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Result<bool, StorageFetchError> {
@@ -113,14 +100,18 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<u128, S
         .json::<Response>()
         .await?;
 
-    let result = match response.result {
-        Some(result) => result,
-        None => return Err(StorageFetchError::NoResult),
-    };
+    match response.result {
+        Some(result) => {
+            let parsed_result: Value = serde_json::from_str(result.to_string().as_str())?;
 
-    let res = serde_json::from_str::<Results>(result.to_string().as_str()).unwrap();
-
-    Ok(res.miner_power.to_u128())
+            if let Some(power) = parsed_result["MinerPower"]["RawBytePower"].as_str() {
+                Ok(power.parse::<u128>().unwrap())
+            } else {
+                Err(StorageFetchError::NoResult)
+            }
+        },
+        None => Err(StorageFetchError::NoResult),
+    }
 }
 
 #[derive(Debug)]
@@ -139,12 +130,6 @@ impl From<reqwest::Error> for StorageFetchError {
 impl From<serde_json::Error> for StorageFetchError {
     fn from(e: serde_json::Error) -> Self {
         StorageFetchError::Serde(e)
-    }
-}
-
-impl MinerPower {
-    pub fn to_u128(&self) -> u128 {
-        self.raw_byte_power.parse::<u128>().unwrap()
     }
 }
 
@@ -171,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn storage_fetch_storage_amount_testnet() {
-        let res = fetch_storage_amount("t01000".to_string(), Network::Testnet).await;
+        let res = fetch_storage_amount("t06024".to_string(), Network::Testnet).await;
 
         println!("{:?}", res);
         assert!(res.is_ok());

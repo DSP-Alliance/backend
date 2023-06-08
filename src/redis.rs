@@ -247,22 +247,14 @@ mod tests {
 
         let res = redis.votes(5u32);
 
-        match res {
-            Ok(_) => {},
-            Err(e) => panic!("Error: {}", e),
-        }
-
-        // let votes = res.unwrap();
-        // for v in votes {
-        //     println!("{}", v);
-        // }
+        assert!(res.is_ok());
     }
 
     #[tokio::test]
     async fn redis_vote_start() {
         let mut redis = redis();
 
-        let vote = yay_vote().recover_vote().await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 4u32).recover_vote(4u32).await.unwrap();
         assert!(redis.add_vote(4u32, vote).is_ok());
 
         let res = redis.vote_start(4u32);
@@ -277,7 +269,7 @@ mod tests {
     async fn redis_vote_status() {
         let mut redis = redis();
 
-        let vote = yay_vote().recover_vote().await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 3u32).recover_vote(3u32).await.unwrap();
         assert!(redis.add_vote(3u32, vote).is_ok());
 
 
@@ -322,7 +314,7 @@ mod tests {
     async fn redis_add_vote() {
         let mut redis = redis();
 
-        let vote = yay_vote().recover_vote().await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 2u32).recover_vote(2u32).await.unwrap();
 
         let res = redis.add_vote(2u32, vote);
 
@@ -335,7 +327,7 @@ mod tests {
     #[tokio::test]
     async fn redis_vote_results() {
         let mut redis = redis();
-        let vote = yay_vote().recover_vote().await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 1u32).recover_vote(1u32).await.unwrap();
 
         let res = redis.add_vote(1u32, vote);
         println!("{:?}", res);

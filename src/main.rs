@@ -3,7 +3,7 @@ use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use fip_voting::{
     Args,
     redis::{Redis, VoteStatus},
-    votes::RecievedVote,
+    votes::ReceivedVote,
 };
 
 const OPEN_CONNECTION_ERROR: &str = "Error opening connection to in-memory database";
@@ -66,7 +66,7 @@ async fn register_vote(
 
     println!("Vote received for FIP: {}", num);
     // Deserialize the body into the vote struct
-    let vote: RecievedVote = match serde_json::from_slice(&body) {
+    let vote: ReceivedVote = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
             println!("{}", e);
@@ -77,7 +77,7 @@ async fn register_vote(
     let spid = vote.sp_id.clone();
 
     // Recover the vote
-    let vote = match vote.recover_vote().await {
+    let vote = match vote.recover_vote(num).await {
         Ok(vote) => vote,
         Err(e) => {
             println!("{}", e);
