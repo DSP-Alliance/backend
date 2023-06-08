@@ -66,7 +66,7 @@ pub struct Vote {
 pub struct ReceivedVote {
     signature: String,
     worker_address: String,
-    pub sp_id: String,
+    sp_id: String,
 }
 
 // 0293eafdcd619bd6ae1a86185fc6dbb2e534fba9086183cb9aa2c3f6feceb9441ecd9297981f1c1d23cffa1730535fc8411298e1650364ca666f4558240ab585af8556b07729b3c3c202fb5ac4477016510f744e768c0d0fce320613e70d64c006
@@ -114,6 +114,10 @@ impl ReceivedVote {
         }
 
         return Err(VoteError::InvalidVoteOption);
+    }
+
+    pub fn sp_id(&self) -> String {
+        self.sp_id.clone()
     }
 
     fn pub_key(&self) -> Result<(PublicKey, Network), VoteError> {
