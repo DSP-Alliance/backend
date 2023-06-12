@@ -1,6 +1,7 @@
 use jsonrpc::Response;
 use reqwest::Client;
 use serde_json::{json, Value};
+use thiserror::Error;
 
 const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
 const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
@@ -114,10 +115,13 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<u128, S
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum StorageFetchError {
+    #[error("reqwest error")]
     Reqwest(reqwest::Error),
+    #[error("serde error")]
     Serde(serde_json::Error),
+    #[error("no result")]
     NoResult
 }
 
