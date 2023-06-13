@@ -3,11 +3,14 @@ pub mod storage;
 pub mod votes;
 pub mod vote_registration;
 
+use std::str::FromStr;
+
 use actix_web::{get, post, web, HttpResponse, Responder};
 use clap::{arg, command, Parser};
+use ethers::types::Address;
 use url::Url;
 
-use crate::vote_registration::ReceivedVoterRegistration;
+use crate::{vote_registration::ReceivedVoterRegistration, storage::Network};
 
 use {
     crate::redis::{Redis, VoteStatus},
@@ -21,6 +24,8 @@ const VOTE_RESULTS_ERROR: &str = "Error getting vote results";
 const VOTE_DESERIALIZE_ERROR: &str = "Error deserializing vote";
 const VOTE_RECOVER_ERROR: &str = "Error recovering vote";
 const VOTE_ADD_ERROR: &str = "Error adding vote";
+const INVALID_NETWORK: &str = "Invalid network";
+const INVALID_ADDRESS: &str = "Invalid address";
 
 // Default values for command line arguments
 const VOTE_LENGTH: &str = "60";
@@ -213,4 +218,54 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     }
 
     HttpResponse::Ok().finish()
+}
+
+#[get("/filecoin/delegates/{network}/{address}")]
+async fn get_delegates(address: web::Path<String>, network: web::Path<String>, config: web::Data<Args>) -> impl Responder {
+    println!("Delegates requested");
+
+    let ntw = match network.into_inner().as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    let address = match Address::from_str(address.into_inner().as_str()) {
+        Ok(address) => address,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::BadRequest().body(INVALID_ADDRESS);
+        }
+    };
+
+    // Open a connection to the redis database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+        }
+    };
+
+    // Get the status of the vote from the database
+    let delegates = match redis.voter_delegates(address, ntw) {
+        Ok(delegates) => delegates,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
+        }
+    };
+
+    println!("Delegates: {:?} for address: {}", delegates, address);
+
+    let mut dgts: Vec<String> = Vec::new();
+    let prefix = match ntw {
+        Network::Mainnet => "f",
+        Network::Testnet => "t",
+    };
+    for delegate in delegates {
+        dgts.push(format!("{}0{}", prefix, delegate.to_string()));
+    }
+
+    HttpResponse::Ok().json(dgts)
 }

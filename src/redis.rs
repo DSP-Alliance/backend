@@ -189,6 +189,12 @@ impl Redis {
         }
     }
 
+    pub fn voter_delegates(&mut self, voter: Address, ntw: Network) -> Result<Vec<u32>, RedisError> {
+        let key = LookupKey::Voter(ntw, voter).to_bytes();
+        let delegates: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
+        Ok(delegates)
+    }
+
     fn vote_start(&mut self, fip_number: impl Into<u32>) -> Result<u64, RedisError> {
         let key = LookupKey::Timestamp(fip_number.into()).to_bytes();
         let timestamp: u64 = self.con.get::<Vec<u8>, u64>(key)?;
