@@ -61,8 +61,6 @@ impl Args {
     }
 }
 
-
-
 #[get("/filecoin/vote/{fip_number}")]
 async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl Responder {
     println!("votes requested");

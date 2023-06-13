@@ -6,7 +6,7 @@ use thiserror::Error;
 const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
 const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Network {
     Mainnet,
     Testnet,
