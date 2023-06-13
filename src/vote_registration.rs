@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, num::ParseIntError};
 
 use bls_signatures::{PublicKey, Serialize, Signature};
 use ethers::types::Address;
@@ -16,16 +16,18 @@ pub enum VoteRegistrationError {
     InvalidMessageFormat,
     #[error("Not a storage provider")]
     NotStorageProvider,
-    #[error("Storage fetch error")]
+    #[error(transparent)]
     StorageFetchError(#[from] StorageFetchError),
     #[error("Invalid worker address")]
     InvalidWorkerAddress,
-    #[error("Invalid BLS encoding")]
+    #[error(transparent)]
     InvalidBlsEncoding(#[from] bls_signatures::Error),
-    #[error("Invalid hex encoding")]
+    #[error(transparent)]
     InvalidHexEncoding(#[from] hex::FromHexError),
     #[error("Invalid address")]
-    InvalidAddress
+    InvalidAddress,
+    #[error("Invalid storage provider id")]
+    InvalidStorageProviderId(#[from] ParseIntError),
 }
 
 /// Raw json to authorize an ethereum address 
@@ -47,10 +49,21 @@ pub struct ReceivedVoterRegistration {
 #[derive(Debug)]
 pub struct VoterRegistration {
     authorized_voter: Address,
-    worker_address: PublicKey,
-    sp_ids: Vec<String>,
+    network: Network,
+    sp_ids: Vec<u32>,
 }
 
+impl VoterRegistration {
+    pub fn address(&self) -> Address {
+        self.authorized_voter.clone()
+    }
+    pub fn ntw(&self) -> Network {
+        self.network.clone()
+    }
+    pub fn sp_ids(&self) -> Vec<u32> {
+        self.sp_ids.clone()
+    }
+}
 
 impl ReceivedVoterRegistration {
     pub async fn recover_vote_registration(&self) -> Result<VoterRegistration, VoteRegistrationError> {
@@ -70,17 +83,20 @@ impl ReceivedVoterRegistration {
             Err(_) => return Err(VoteRegistrationError::InvalidAddress),
         };
 
+        let mut new_ids: Vec<u32> = Vec::new();
         for sp_id in sp_ids.clone() {
             match verify_id(sp_id.clone(), self.worker_address.clone(), ntw).await? {
                 true => (),
                 false => return Err(VoteRegistrationError::NotStorageProvider),
             };
+            let id = u32::from_str(sp_id.as_str())?;
+            new_ids.push(id);
         }
 
         Ok(VoterRegistration {
             authorized_voter: address,
-            worker_address: pubkey,
-            sp_ids,
+            network: ntw,
+            sp_ids: new_ids,
         })
     }
 

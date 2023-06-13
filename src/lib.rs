@@ -7,6 +7,8 @@ use actix_web::{get, post, web, HttpResponse, Responder};
 use clap::{arg, command, Parser};
 use url::Url;
 
+use crate::vote_registration::ReceivedVoterRegistration;
+
 use {
     crate::redis::{Redis, VoteStatus},
     votes::ReceivedVote,
@@ -53,6 +55,8 @@ impl Args {
         self.serve_address.clone()
     }
 }
+
+
 
 #[get("/filecoin/vote/{fip_number}")]
 async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl Responder {
@@ -171,5 +175,42 @@ async fn register_vote(
 
 #[post("/filecoin/register")]
 async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Responder {
+    println!("Voter registration received");
+
+    // Deserialize the body into the vote struct
+    let reg: ReceivedVoterRegistration = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
+        }
+    };
+
+    let registration = match reg.recover_vote_registration().await {
+        Ok(registration) => registration,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::BadRequest().body(VOTE_RECOVER_ERROR);
+        }
+    };
+
+    // Open a connection to the redis database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+        }
+    };
+
+    // Add the vote to the database
+    match redis.register_voter(registration) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
+        }
+    }
+
     HttpResponse::Ok().finish()
 }

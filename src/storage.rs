@@ -6,7 +6,7 @@ use thiserror::Error;
 const MAINNET_RPC: &str = "https://api.chain.love/rpc/v0";
 const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Network {
     Mainnet,
     Testnet,
@@ -118,23 +118,11 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<u128, S
 #[derive(Debug, Error)]
 pub enum StorageFetchError {
     #[error("reqwest error")]
-    Reqwest(reqwest::Error),
+    Reqwest(#[from] reqwest::Error),
     #[error("serde error")]
-    Serde(serde_json::Error),
+    Serde(#[from] serde_json::Error),
     #[error("no result")]
     NoResult
-}
-
-impl From<reqwest::Error> for StorageFetchError {
-    fn from(e: reqwest::Error) -> Self {
-        StorageFetchError::Reqwest(e)
-    }
-}
-
-impl From<serde_json::Error> for StorageFetchError {
-    fn from(e: serde_json::Error) -> Self {
-        StorageFetchError::Serde(e)
-    }
 }
 
 impl Network {

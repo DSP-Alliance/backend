@@ -2,11 +2,12 @@ extern crate redis;
 
 use std::{mem::MaybeUninit, time};
 
+use ethers::types::Address;
 use redis::{Commands, Connection, RedisError};
 use serde::Serialize;
 use url::Url;
 
-use crate::votes::{Vote, VoteOption};
+use crate::{votes::{Vote, VoteOption}, vote_registration::VoterRegistration, storage::Network};
 
 pub struct Redis {
     con: Connection,
@@ -22,6 +23,7 @@ pub enum VoteStatus {
 enum LookupKey {
     FipNumber(u32),
     Timestamp(u32),
+    Voter(Network, Address)
 }
 
 impl LookupKey {
@@ -29,6 +31,17 @@ impl LookupKey {
         let (lookup_type, fip) = match self {
             LookupKey::FipNumber(fip) => (0, fip),
             LookupKey::Timestamp(fip) => (1, fip),
+            LookupKey::Voter(ntw, voter) => {
+                let ntw = match ntw {
+                    Network::Mainnet => 0,
+                    Network::Testnet => 1,
+                };
+                let voter = voter.as_bytes();
+                let mut bytes = Vec::with_capacity(21);
+                bytes.push(ntw);
+                bytes.extend_from_slice(voter);
+                return bytes;
+            },
         };
         let slice = unsafe {
             let mut key = MaybeUninit::<[u8; 5]>::uninit();
@@ -96,6 +109,16 @@ impl Redis {
             .unwrap()
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
+
+        Ok(())
+    }
+
+    pub fn register_voter(&mut self, voter: VoterRegistration) -> Result<(), RedisError> {
+        let key = LookupKey::Voter(voter.ntw(), voter.address()).to_bytes();
+
+        let authorized = voter.sp_ids();
+
+        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, authorized)?;
 
         Ok(())
     }
