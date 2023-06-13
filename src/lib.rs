@@ -1,6 +1,7 @@
 pub mod redis;
 pub mod storage;
 pub mod votes;
+pub mod vote_registration;
 
 use actix_web::{get, post, web, HttpResponse, Responder};
 use clap::{arg, command, Parser};
@@ -114,10 +115,8 @@ async fn register_vote(
         }
     };
 
-    let spid = vote.sp_id();
-
     // Recover the vote
-    let vote = match vote.recover_vote(num).await {
+    let vote = match vote.vote() {
         Ok(vote) => vote,
         Err(e) => {
             println!("{}", e);
@@ -151,7 +150,7 @@ async fn register_vote(
         VoteStatus::DoesNotExist => (),
     }
 
-    let choice = vote.choice.clone();
+    let choice = vote.choice();
 
     // Add the vote to the database
     match redis.add_vote(num, vote) {
@@ -163,8 +162,8 @@ async fn register_vote(
     }
 
     println!(
-        "Vote ({:?}) added for FIP: {} from Storage Provider: {}",
-        choice, num, spid
+        "Vote ({:?}) added for FIP: {}",
+        choice, num
     );
 
     HttpResponse::Ok().finish()

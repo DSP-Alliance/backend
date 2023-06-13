@@ -6,7 +6,7 @@ use regex::Regex;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::{storage::{verify_id, fetch_storage_amount, Network, StorageFetchError}};
+use crate::storage::{verify_id, Network, StorageFetchError};
 
 #[derive(Debug, Error)]
 pub enum VoteRegistrationError {
@@ -42,11 +42,12 @@ pub struct ReceivedVoterRegistration {
     message: String,
 }
 
+/// This struct represents an authorized eth address to vote on behalf 
+/// of a list of controlled storage providers
 #[derive(Debug)]
 pub struct VoterRegistration {
     authorized_voter: Address,
     worker_address: PublicKey,
-    total_storage: u128,
     sp_ids: Vec<String>,
 }
 
@@ -69,10 +70,9 @@ impl ReceivedVoterRegistration {
             Err(_) => return Err(VoteRegistrationError::InvalidAddress),
         };
 
-        let mut total_storage: u128 = 0;
         for sp_id in sp_ids.clone() {
             match verify_id(sp_id.clone(), self.worker_address.clone(), ntw).await? {
-                true => total_storage += fetch_storage_amount(sp_id.clone(), ntw).await?,
+                true => (),
                 false => return Err(VoteRegistrationError::NotStorageProvider),
             };
         }
@@ -80,7 +80,6 @@ impl ReceivedVoterRegistration {
         Ok(VoterRegistration {
             authorized_voter: address,
             worker_address: pubkey,
-            total_storage,
             sp_ids,
         })
     }

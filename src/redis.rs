@@ -112,7 +112,7 @@ impl Redis {
         let votes = self.votes(fip_number)?;
 
         for vote in votes {
-            match vote.choice {
+            match vote.choice() {
                 VoteOption::Yay => yay += 1,
                 VoteOption::Nay => nay += 1,
                 VoteOption::Abstain => abstain += 1,
@@ -254,7 +254,7 @@ mod tests {
     async fn redis_vote_start() {
         let mut redis = redis();
 
-        let vote = test_vote(VoteOption::Yay, 4u32).recover_vote(4u32).await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 4u32).vote().unwrap();
         assert!(redis.add_vote(4u32, vote).is_ok());
 
         let res = redis.vote_start(4u32);
@@ -269,7 +269,7 @@ mod tests {
     async fn redis_vote_status() {
         let mut redis = redis();
 
-        let vote = test_vote(VoteOption::Yay, 3u32).recover_vote(3u32).await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 3u32).vote().unwrap();
         assert!(redis.add_vote(3u32, vote).is_ok());
 
 
@@ -314,7 +314,7 @@ mod tests {
     async fn redis_add_vote() {
         let mut redis = redis();
 
-        let vote = test_vote(VoteOption::Yay, 2u32).recover_vote(2u32).await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 2u32).vote().unwrap();
 
         let res = redis.add_vote(2u32, vote);
 
@@ -327,7 +327,7 @@ mod tests {
     #[tokio::test]
     async fn redis_vote_results() {
         let mut redis = redis();
-        let vote = test_vote(VoteOption::Yay, 1u32).recover_vote(1u32).await.unwrap();
+        let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
 
         let res = redis.add_vote(1u32, vote);
         println!("{:?}", res);

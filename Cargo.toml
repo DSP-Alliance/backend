@@ -16,6 +16,7 @@ redis = "0.23.0"
 
 # CRYPTO DEP
 bls-signatures = { version = "0.14.0", git = "https://github.com/filecoin-project/bls-signatures" }
+ethers = { version = "2.0.7" }
 
 # SERIALIZATION DEP
 hex = "0.4.3"

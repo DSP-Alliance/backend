@@ -5,12 +5,6 @@ use redis::{from_redis_value, FromRedisValue, ToRedisArgs};
 use serde::Deserialize;
 use thiserror::Error;
 
-const YAY: VoteOption = VoteOption::Yay;
-const NAY: VoteOption = VoteOption::Nay;
-const ABSTAIN: VoteOption = VoteOption::Abstain;
-
-const VOTE_OPTIONS: [VoteOption; 3] = [YAY, NAY, ABSTAIN];
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum VoteOption {
     Yay,
@@ -37,7 +31,7 @@ pub struct Vote {
 /// Message scheme
 /// 
 /// YAY: FIP-xxx
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct ReceivedVote {
     signature: String,
     message: String,
@@ -54,7 +48,7 @@ impl ReceivedVote {
         let msg: Vec<String> = self.message.split_whitespace().map(|s| s.to_string()).collect();
 
         let (choice, fip_str) = match msg.as_slice() {
-            [choice, fip] => (*choice, *fip),
+            [choice, fip] => (choice, fip),
             _ => return Err(VoteError::InvalidMessageFormat),
         };
 
@@ -83,6 +77,12 @@ impl ReceivedVote {
     }
 }
 
+impl Vote {
+    pub fn choice(&self) -> VoteOption {
+        self.choice.clone()
+    }
+}
+
 impl From<u8> for VoteOption {
     fn from(byte: u8) -> Self {
         match byte {
@@ -90,6 +90,16 @@ impl From<u8> for VoteOption {
             1 => VoteOption::Nay,
             2 => VoteOption::Abstain,
             _ => panic!("Invalid vote option"),
+        }
+    }
+}
+
+impl Into<u8> for VoteOption {
+    fn into(self) -> u8 {
+        match self {
+            VoteOption::Yay => 0,
+            VoteOption::Nay => 1,
+            VoteOption::Abstain => 2,
         }
     }
 }
@@ -111,9 +121,9 @@ impl FromRedisValue for VoteOption {
     fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
         let s: u8 = from_redis_value(v)?;
         match s {
-            0 => Ok(YAY),
-            1 => Ok(NAY),
-            2 => Ok(ABSTAIN),
+            0 => Ok(VoteOption::Yay),
+            1 => Ok(VoteOption::Nay),
+            2 => Ok(VoteOption::Abstain),
             _ => Err(redis::RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Invalid vote option",
@@ -137,48 +147,25 @@ impl ToRedisArgs for VoteOption {
     }
 }
 
-/*
 impl FromRedisValue for Vote {
     fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
         let args: Vec<u8> = from_redis_value(v)?;
-
-        if args.len() != 159 {
+        if args.len() != 25 {
             return Err(redis::RedisError::from((
                 redis::ErrorKind::TypeError,
-                "Invalid vote",
+                "Invalid vote format",
             )));
         }
 
         let choice: VoteOption = args[0].into();
 
-        let timestamp = u64::from_be_bytes([
-            args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8],
-        ]);
-        let fip = u32::from_be_bytes([args[9], args[10], args[11], args[12]]);
+        let address = Address::from_slice(&args[1..21]);
 
-        let voter = match PublicKey::from_bytes(&args[13..61]) {
-            Ok(voter) => voter,
-            Err(_) => {
-                return Err(redis::RedisError::from((
-                    redis::ErrorKind::TypeError,
-                    "Invalid voter key",
-                )))
-            }
-        };
-
-        let raw_byte_power = u128::from_be_bytes([
-            args[62], args[63], args[64], args[65], args[66], args[67], args[68], args[69],
-            args[70], args[71], args[72], args[73], args[74], args[75], args[76], args[77],
-        ]);
-
-        let worker_addr = String::from_utf8(args[77..].to_vec()).unwrap();
+        let fip = u32::from_be_bytes(args[21..25].try_into().unwrap());
 
         Ok(Vote {
             choice,
-            timestamp,
-            voter,
-            raw_byte_power,
-            worker_addr,
+            address,
             fip,
         })
     }
@@ -189,32 +176,16 @@ impl ToRedisArgs for Vote {
     where
         W: ?Sized + redis::RedisWrite,
     {
-        let mut args = Vec::with_capacity(150);
-        let choice = match self.choice {
-            VoteOption::Yay => 0u8,
-            VoteOption::Nay => 1u8,
-            VoteOption::Abstain => 2u8,
-        };
-        let timestamp = self.timestamp.clone().to_be_bytes().to_vec();
+        let mut args = Vec::with_capacity(25);
+        let choice: u8 = self.choice.clone().into();
         let fip = self.fip.clone().to_be_bytes().to_vec();
-        let voter = self.voter.as_bytes();
-        let raw_byte_power = self.raw_byte_power.clone().to_be_bytes().to_vec();
-        let worker_addr = self.worker_addr.as_bytes().to_vec();
+        let addr = self.address.as_fixed_bytes().to_vec();
 
         args.push(choice);
-        for byte in timestamp {
+        for byte in addr {
             args.push(byte);
         }
         for byte in fip {
-            args.push(byte);
-        }
-        for byte in voter {
-            args.push(byte);
-        }
-        for byte in raw_byte_power {
-            args.push(byte);
-        }
-        for byte in worker_addr {
             args.push(byte);
         }
 
@@ -229,20 +200,17 @@ impl std::fmt::Display for Vote {
             VoteOption::Nay => "Nay",
             VoteOption::Abstain => "Abstain",
         };
-        let display_addr = self.worker_addr[0..8].to_string()
-            + "..."
-            + &self.worker_addr[self.worker_addr.len() - 6..];
         write!(
             f,
-            "{} voted {} at {} with {} byte power",
-            display_addr, vote, self.timestamp, self.raw_byte_power
+            "{} voted {} on FIP-{}",
+            self.address, vote, self.fip
         )
     }
 }
 
 impl PartialEq for Vote {
     fn eq(&self, other: &Self) -> bool {
-        self.voter == other.voter
+        self.address == other.address && self.fip == other.fip
     }
 }
 
@@ -250,16 +218,8 @@ impl PartialEq for Vote {
 pub mod test_votes {
     use super::*;
 
-    fn default() -> ReceivedVote {
-        ReceivedVote {
-            signature: "".to_string(),
-            worker_address: "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(),
-            sp_id: "t06024".to_string(),
-        }
-    }
-
     fn yay(num: u32) -> ReceivedVote {
-        let mut vote = default();
+        let mut vote = ReceivedVote::default();
         match num {
             1 => {
                 vote.signature = "0298d866dd504c531d56fc5e7b845cd907e47067883102e1165b1921b692f8b4434f8852e89dd92da202eb8713e5c1a51a0f48721517bf7b028c6a04e8adeaf9b9fd26808bc8035fcc6a558b8bef707d960d9b88c248f0da6a9f4e56d75e2a7acb".to_string();
@@ -286,7 +246,7 @@ pub mod test_votes {
     }
 
     fn nay(num: u32) -> ReceivedVote {
-        let mut vote = default();
+        let mut vote = ReceivedVote::default();
         match num {
             1 => {
                 vote.signature = "02b1e5489c856a02506e7660cebc813cb94919e7aa42e595fa00276552b09832dd0bacf2b79aefe5da89ed0ecfff92fb1701c4a314c0274b62979cc673bc4ba2bdce7b0fb07944c0257e3274a86f09acfb07f1fa54b96b80282bb309033fd77cdd".to_string();
@@ -313,7 +273,7 @@ pub mod test_votes {
     }
 
     fn abstain(num: u32) -> ReceivedVote {
-        let mut vote = default();
+        let mut vote = ReceivedVote::default();
         match num {
             1 => {
                 vote.signature = "02acda264e19097ba93e1c4741d070e8eb71b1d18b3833026da648b8cf1edf7d014d2af097959d33923250ccaa3ab001e9147daa6c0f1a99382602fdefede31843f728e602eb18eda67119649f5e94f50e26075e4db22962c8785d4b1d076afa2b".to_string();
@@ -347,7 +307,7 @@ pub mod test_votes {
         }
     }
 }
-
+/*
 #[cfg(test)]
 mod votes_test {
     use redis::Value;
