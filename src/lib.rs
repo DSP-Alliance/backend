@@ -114,16 +114,9 @@ async fn get_votes(fip_number: web::Path<u32>, network: web::Path<String>, confi
 async fn register_vote(
     body: web::Bytes,
     fip_number: web::Path<u32>,
-    network: web::Path<String>,
     config: web::Data<Args>,
 ) -> impl Responder {
     let num = fip_number.into_inner();
-
-    let ntw = match network.as_str() {
-        "mainnet" => Network::Mainnet,
-        "calibration" => Network::Testnet,
-        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
-    };
 
     println!("Vote received for FIP: {}", num);
     // Deserialize the body into the vote struct
