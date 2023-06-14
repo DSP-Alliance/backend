@@ -3,7 +3,7 @@ use actix_web::{web, App, HttpServer};
 use fip_voting::{
     Args,
     get_votes,
-    register_vote,
+    register_vote, get_delegates, register_voter,
 };
 
 
@@ -24,6 +24,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(args.clone()))
             .service(get_votes)
             .service(register_vote)
+            .service(get_delegates)
+            .service(register_voter)
     })
     .bind((serve_address.host().unwrap().to_string(), port))?
     .run()
