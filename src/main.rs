@@ -14,6 +14,10 @@ async fn main() -> std::io::Result<()> {
     let serve_address = args.serve_address();
 
     println!("Serving at {}", serve_address);
+    let port = match serve_address.port() {
+        Some(port) => port,
+        None => 80
+    };
 
     HttpServer::new(move || {
         App::new()
@@ -21,7 +25,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_votes)
             .service(register_vote)
     })
-    .bind((serve_address.host().unwrap().to_string(), serve_address.port().unwrap()))?
+    .bind((serve_address.host().unwrap().to_string(), port))?
     .run()
     .await
 }
