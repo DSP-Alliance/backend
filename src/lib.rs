@@ -8,6 +8,7 @@ use std::str::FromStr;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use clap::{arg, command, Parser};
 use ethers::types::Address;
+use serde::Deserialize;
 use url::Url;
 
 use crate::{vote_registration::ReceivedVoterRegistration, storage::Network};
@@ -61,17 +62,33 @@ impl Args {
     }
 }
 
-#[get("/filecoin/vote/{network}/{fip_number}")]
-async fn get_votes(fip_number: web::Path<u32>, network: web::Path<String>, config: web::Data<Args>) -> impl Responder {
+#[derive(Deserialize)]
+struct NtwParams {
+    network: String,
+    fip_number: u32,
+}
+
+#[derive(Deserialize)]
+struct DelegateParams {
+    network: String,
+    address: String,
+}
+
+#[derive(Deserialize)]
+struct FipParams {
+    fip_number: u32,
+}
+
+#[get("/filecoin/vote")]
+async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>) -> impl Responder {
     println!("votes requested");
 
-    let ntw = match network.as_str() {
+    let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,
         "calibration" => Network::Testnet,
         _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
     };
-
-    let num = fip_number.into_inner();
+    let num = query_params.fip_number;
 
     // Open a connection to the redis database
     let mut redis = match Redis::new(config.redis_path()) {
@@ -110,13 +127,13 @@ async fn get_votes(fip_number: web::Path<u32>, network: web::Path<String>, confi
     }
 }
 
-#[post("/filecoin/vote/{fip_number}")]
+#[post("/filecoin/vote")]
 async fn register_vote(
     body: web::Bytes,
-    fip_number: web::Path<u32>,
+    query_params: web::Query<FipParams>,
     config: web::Data<Args>,
 ) -> impl Responder {
-    let num = fip_number.into_inner();
+    let num = query_params.fip_number;
 
     println!("Vote received for FIP: {}", num);
     // Deserialize the body into the vote struct
@@ -234,17 +251,18 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     HttpResponse::Ok().finish()
 }
 
-#[get("/filecoin/delegates/{network}/{address}")]
-async fn get_delegates(address: web::Path<String>, network: web::Path<String>, config: web::Data<Args>) -> impl Responder {
+#[get("/filecoin/delegates")]
+async fn get_delegates(query_params: web::Query<DelegateParams>, config: web::Data<Args>) -> impl Responder {
     println!("Delegates requested");
 
-    let ntw = match network.into_inner().as_str() {
+    let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,
         "calibration" => Network::Testnet,
         _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
     };
+    let address = query_params.address.clone();
 
-    let address = match Address::from_str(address.into_inner().as_str()) {
+    let address = match Address::from_str(address.as_str()) {
         Ok(address) => address,
         Err(e) => {
             println!("{}", e);
