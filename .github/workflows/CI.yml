@@ -1,0 +1,27 @@
+name: Deploy to AWS Server
+
+on:
+  push:
+    branches:
+      - your-branch
+
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.5.3
+      with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Setup known hosts
+      run: echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+    - name: Test, build, and deploy
+      run: |
+        ssh -o StrictHostKeyChecking=no ubuntu@18.117.166.120 'cd fip-voting/; git pull; cargo test; cargo build --release'
