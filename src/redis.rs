@@ -250,6 +250,9 @@ impl Redis {
     fn get_storage(&mut self, fip_number: u32, vote: VoteOption, ntw: Network) -> Result<u128, RedisError> {
         let key = LookupKey::Storage(vote, ntw, fip_number).to_bytes();
         let storage_bytes: Vec<u8> = self.con.get::<Vec<u8>, Vec<u8>>(key)?;
+        if storage_bytes.is_empty() {
+            return Ok(0);
+        }
         if storage_bytes.len() != 16 {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
@@ -372,41 +375,71 @@ impl Redis {
         Ok(())
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     use crate::votes::test_votes::*;
+    use crate::vote_registration::test_voter_registration::*;
 
-    fn redis() -> Redis {
+    async fn redis() -> Redis {
         let url = Url::parse("redis://127.0.0.1:6379").unwrap();
         let mut redis = Redis::new(url).unwrap();
 
         for i in 1..=10 {
-            redis.flush_vote(i as u32).unwrap();
+            redis.flush_vote(i as u32, Network::Testnet).unwrap();
         }
+
+        let vote_reg = test_reg().recover_vote_registration().await.unwrap();
+
+        redis.register_voter(vote_reg).unwrap();
 
         redis
     }
 
+    fn voter() -> Address {
+        Address::from_str("0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56").unwrap()
+    }
+
     #[tokio::test]
     async fn redis_votes() {
-        let mut redis = redis();
+        let mut redis = redis().await;
 
-        let res = redis.votes(5u32);
+        let res = redis.votes(5u32, Network::Testnet);
+
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn redis_get_storage() {
+        let mut redis = redis().await;
+
+        let res = redis.get_storage(5u32, VoteOption::Yay, Network::Testnet);
+
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn redis_add_storage() {
+        let mut redis = redis().await;
+
+        let res = redis.add_storage(6024u32, Network::Testnet, VoteOption::Yay, 5u32).await;
 
         assert!(res.is_ok());
     }
 
     #[tokio::test]
     async fn redis_vote_start() {
-        let mut redis = redis();
+        let mut redis = redis().await;
 
         let vote = test_vote(VoteOption::Yay, 4u32).vote().unwrap();
-        assert!(redis.add_vote(4u32, vote).is_ok());
+        let res = redis.add_vote(4u32, vote, voter()).await;
+        assert!(res.is_ok());
 
-        let res = redis.vote_start(4u32);
+        let res = redis.vote_start(4u32, Network::Testnet);
 
         match res {
             Ok(_) => {},
@@ -416,13 +449,13 @@ mod tests {
 
     #[tokio::test]
     async fn redis_vote_status() {
-        let mut redis = redis();
+        let mut redis = redis().await;
 
         let vote = test_vote(VoteOption::Yay, 3u32).vote().unwrap();
-        assert!(redis.add_vote(3u32, vote).is_ok());
+        assert!(redis.add_vote(3u32, vote, voter()).await.is_ok());
 
 
-        let vote_start = redis.vote_start(3u32).unwrap();
+        let vote_start = redis.vote_start(3u32, Network::Testnet).unwrap();
 
         tokio::time::sleep(time::Duration::from_secs(2)).await;
 
@@ -434,7 +467,7 @@ mod tests {
         let ongoing = time_now - vote_start + 1;
         let concluded = time_now - vote_start - 1;
 
-        let res = redis.vote_status(3u32, ongoing);
+        let res = redis.vote_status(3u32, ongoing, Network::Testnet);
 
         match res {
             Ok(_) => {},
@@ -442,7 +475,7 @@ mod tests {
         }
         assert_eq!(res.unwrap(), VoteStatus::InProgress);
 
-        let res = redis.vote_status(3u32, concluded);
+        let res = redis.vote_status(3u32, concluded, Network::Testnet);
 
         match res {
             Ok(_) => {},
@@ -450,7 +483,7 @@ mod tests {
         }
         assert_eq!(res.unwrap(), VoteStatus::Concluded);
 
-        let res = redis.vote_status(1234089398u32, concluded);
+        let res = redis.vote_status(1234089398u32, concluded, Network::Testnet);
 
         match res {
             Ok(_) => {},
@@ -461,11 +494,11 @@ mod tests {
 
     #[tokio::test]
     async fn redis_add_vote() {
-        let mut redis = redis();
+        let mut redis = redis().await;
 
         let vote = test_vote(VoteOption::Yay, 2u32).vote().unwrap();
 
-        let res = redis.add_vote(2u32, vote);
+        let res = redis.add_vote(2u32, vote, voter()).await;
 
         match res {
             Ok(_) => {},
@@ -475,10 +508,10 @@ mod tests {
 
     #[tokio::test]
     async fn redis_vote_results() {
-        let mut redis = redis();
+        let mut redis = redis().await;
         let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
 
-        let res = redis.add_vote(1u32, vote);
+        let res = redis.add_vote(1u32, vote, voter()).await;
         println!("{:?}", res);
         assert!(res.is_ok());
 
@@ -492,8 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn redis_flush_database() {
-        let mut redis = redis();
+        let mut redis = redis().await;
         redis.flush_all_votes().unwrap();
     }
 }
-*/

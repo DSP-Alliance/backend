@@ -158,17 +158,21 @@ impl ReceivedVoterRegistration {
     }
 }
 
-#[cfg(test)]
-mod vote_registration_tests {
-    use super::*;
-
-    fn test_reg() -> ReceivedVoterRegistration {
+pub mod test_voter_registration {
+    use super::ReceivedVoterRegistration;
+    pub fn test_reg() -> ReceivedVoterRegistration {
         ReceivedVoterRegistration { 
             signature: "0299f5c42a957809d0bd80cb29986b811fbacd1ed84b5995f1d21c6a7063cada725fe0c643bbcdc4082b078d1420fc9e7d08f9c28c9dbf4597183dd92c2fa2ff7727eee2e6f84fb24134051005ea93b3bfe5e294d2e1413bf111440afdadfa0744".to_string(), 
             worker_address: "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(), 
             message: "2030784632333631443241394130363737653866664431353135643635434635313930654132306542353620743036303234".to_string() 
         }
     }
+}
+
+#[cfg(test)]
+mod vote_registration_tests {
+    use super::*;
+    use super::test_voter_registration::test_reg;
 
     #[test]
     fn vote_registration_sig() {
