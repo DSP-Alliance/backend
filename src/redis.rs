@@ -275,7 +275,7 @@ impl Redis {
         Ok(votes)
     }
 
-    fn network(&mut self, voter: Address) -> Result<Network, RedisError> {
+    pub fn network(&mut self, voter: Address) -> Result<Network, RedisError> {
         let key = LookupKey::Network(voter).to_bytes();
         let ntw: Network = self.con.get::<Vec<u8>, Network>(key)?;
         Ok(ntw)

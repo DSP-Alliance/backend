@@ -148,6 +148,14 @@ async fn register_vote(
         }
     };
 
+    let ntw = match redis.network(voter) {
+        Ok(ntw) => ntw,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(INVALID_ADDRESS);
+        }
+    };
+
     let status = match redis.vote_status(num, config.vote_length(), ntw) {
         Ok(status) => status,
         Err(e) => {
