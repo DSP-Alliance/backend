@@ -61,9 +61,15 @@ impl Args {
     }
 }
 
-#[get("/filecoin/vote/{fip_number}")]
-async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl Responder {
+#[get("/filecoin/vote/{network}/{fip_number}")]
+async fn get_votes(fip_number: web::Path<u32>, network: web::Path<String>, config: web::Data<Args>) -> impl Responder {
     println!("votes requested");
+
+    let ntw = match network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
 
     let num = fip_number.into_inner();
 
@@ -77,7 +83,7 @@ async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl 
     };
 
     // Get the status of the vote from the database
-    let status = match redis.vote_status(num, config.vote_length()) {
+    let status = match redis.vote_status(num, config.vote_length(), ntw) {
         Ok(status) => status,
         Err(e) => {
             println!("{}", e);
@@ -91,7 +97,7 @@ async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl 
     match status {
         VoteStatus::InProgress => HttpResponse::Forbidden().finish(),
         VoteStatus::Concluded => {
-            let vote_results = match redis.vote_results(num) {
+            let vote_results = match redis.vote_results(num, ntw) {
                 Ok(results) => results,
                 Err(e) => {
                     println!("{}", e);
@@ -108,9 +114,16 @@ async fn get_votes(fip_number: web::Path<u32>, config: web::Data<Args>) -> impl 
 async fn register_vote(
     body: web::Bytes,
     fip_number: web::Path<u32>,
+    network: web::Path<String>,
     config: web::Data<Args>,
 ) -> impl Responder {
     let num = fip_number.into_inner();
+
+    let ntw = match network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
 
     println!("Vote received for FIP: {}", num);
     // Deserialize the body into the vote struct
@@ -131,6 +144,8 @@ async fn register_vote(
         }
     };
 
+    let voter = vote.voter();
+
     // Open a connection to the redis database
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
@@ -140,7 +155,7 @@ async fn register_vote(
         }
     };
 
-    let status = match redis.vote_status(num, config.vote_length()) {
+    let status = match redis.vote_status(num, config.vote_length(), ntw) {
         Ok(status) => status,
         Err(e) => {
             println!("{}", e);
@@ -160,7 +175,7 @@ async fn register_vote(
     let choice = vote.choice();
 
     // Add the vote to the database
-    match redis.add_vote(num, vote) {
+    match redis.add_vote(num, vote, voter).await {
         Ok(_) => (),
         Err(e) => {
             println!("{}", e);

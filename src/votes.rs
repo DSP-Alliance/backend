@@ -82,6 +82,10 @@ impl Vote {
     pub fn choice(&self) -> VoteOption {
         self.choice.clone()
     }
+
+    pub fn voter(&self) -> Address {
+        self.address.clone()
+    }
 }
 
 impl From<u8> for VoteOption {

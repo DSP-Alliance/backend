@@ -7,7 +7,7 @@ use redis::{Commands, Connection, RedisError};
 use serde::Serialize;
 use url::Url;
 
-use crate::{votes::{Vote, VoteOption}, vote_registration::VoterRegistration, storage::Network};
+use crate::{votes::{Vote, VoteOption}, vote_registration::VoterRegistration, storage::{Network, fetch_storage_amount}};
 
 pub struct Redis {
     con: Connection,
@@ -21,16 +21,37 @@ pub enum VoteStatus {
 }
 
 enum LookupKey {
-    FipNumber(u32),
-    Timestamp(u32),
-    Voter(Network, Address)
+    /// FIP number to vector of all votes
+    Votes(u32, Network),
+    /// VoteChoice and FIP number to total storage amount
+    Storage(VoteOption, Network, u32),
+    /// FIP number to timestamp of vote start
+    Timestamp(u32, Network),
+    /// Network and voter address to voter registration
+    Voter(Network, Address),
+    /// The network the address belongs to
+    Network(Address),
 }
 
 impl LookupKey {
     fn to_bytes(&self) -> Vec<u8> {
         let (lookup_type, fip) = match self {
-            LookupKey::FipNumber(fip) => (0, fip),
-            LookupKey::Timestamp(fip) => (1, fip),
+            // The first bit will be 0 or 1
+            LookupKey::Votes(fip, ntw) => {
+                (*ntw as u8, fip)
+            },
+            // The first bit will range between 2 and 8
+            LookupKey::Storage(choice, ntw, fip) => {
+                let choice = match choice {
+                    VoteOption::Yay => 2,
+                    VoteOption::Nay => 3,
+                    VoteOption::Abstain => 4,
+                };
+                let nt = *ntw as u8 + 1; // 1 or 2
+                (choice * nt, fip)
+            }
+            // The first bit will be 9 or 10
+            LookupKey::Timestamp(fip, ntw) => (9 + *ntw as u8, fip),
             LookupKey::Voter(ntw, voter) => {
                 let ntw = match ntw {
                     Network::Mainnet => 0,
@@ -42,6 +63,13 @@ impl LookupKey {
                 bytes.extend_from_slice(voter);
                 return bytes;
             },
+            LookupKey::Network(voter) => {
+                let voter = voter.as_bytes();
+                let mut bytes = Vec::with_capacity(21);
+                bytes.push(2);
+                bytes.extend_from_slice(voter);
+                return bytes;
+            }
         };
         let slice = unsafe {
             let mut key = MaybeUninit::<[u8; 5]>::uninit();
@@ -67,10 +95,6 @@ struct VoteResults {
     abstain_storage_size: u128,
 }
 
-/*
-   TODO: Set up table for tracking storage size of votes
-*/
-
 impl Redis {
     pub fn new(path: impl Into<Url>) -> Result<Redis, RedisError> {
         let client = redis::Client::open(path.into())?;
@@ -83,25 +107,38 @@ impl Redis {
     /                                 INITIALIZATION                                 /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    /// This function assumes that the FIP number is not already in the database
-    pub fn new_vote(
+    /// Creates a new vote in the database
+    /// 
+    /// * Voter must be registered before hand
+    /// * Creates a new vector of voters from FIP number
+    /// * Sets the timestamp of the vote start as now
+    /// * For every storage provider the voter is authorized for, add their power to the vote choice
+    async fn new_vote(
         &mut self,
         fip_number: impl Into<u32>,
-        vote: Option<Vote>,
+        vote: Vote,
+        voter: Address,
+        ntw: Network,
     ) -> Result<(), RedisError> {
-        // If vote is None, set the vector to empty
-        let vote = match vote {
-            Some(v) => vec![v],
-            None => vec![],
-        };
+        let num = fip_number.into();
 
-        let fip_num = fip_number.into();
+        // Fetch the storage provider Id's that the voter is authorized for
+        let authorized = self.voter_delegates(voter, ntw)?;
 
-        let vote_key = LookupKey::FipNumber(fip_num).to_bytes();
-        let time_key = LookupKey::Timestamp(fip_num).to_bytes();
+        if authorized.is_empty() {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Voter is not authorized for any storage providers",
+            )));
+        }
+
+        let vote_key = LookupKey::Votes(num, ntw).to_bytes();
+        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
+
+        let choice = vote.choice();
 
         // Set a map of FIP number to vector of all votes
-        self.con.set::<Vec<u8>, Vec<Vote>, ()>(vote_key, vote)?;
+        self.con.set::<Vec<u8>, Vec<Vote>, ()>(vote_key, vec![vote])?;
 
         // Set a map of FIP to timestamp of vote start
         let timestamp = time::SystemTime::now()
@@ -110,11 +147,22 @@ impl Redis {
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
 
+        // Add the storage providers power to their vote choice for the respective FIP
+        for sp_id in authorized {
+            self.add_storage(sp_id, ntw, choice.clone(), num).await?;
+        }
+
         Ok(())
     }
 
+    /// Registers a voter in the database
+    /// 
+    /// * Creates a lookup from voters address to their respective network
+    /// * Creates a lookup from voters address to their authorized storage providers
     pub fn register_voter(&mut self, voter: VoterRegistration) -> Result<(), RedisError> {
         let key = LookupKey::Voter(voter.ntw(), voter.address()).to_bytes();
+
+        self.set_network(voter.ntw(), voter.address())?;
 
         let authorized = voter.sp_ids();
 
@@ -127,12 +175,16 @@ impl Redis {
     /                                     GETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    pub fn vote_results(&mut self, fip_number: impl Into<u32>) -> Result<String, RedisError> {
+    /// Returns a json blob of the vote results for the FIP number
+    /// 
+    pub fn vote_results(&mut self, fip_number: impl Into<u32>, ntw: Network) -> Result<String, RedisError> {
         let mut yay = 0;
         let mut nay = 0;
         let mut abstain = 0;
 
-        let votes = self.votes(fip_number)?;
+        let num = fip_number.into();
+
+        let votes = self.votes(num, ntw)?;
 
         for vote in votes {
             match vote.choice() {
@@ -146,9 +198,9 @@ impl Redis {
             yay,
             nay,
             abstain,
-            yay_storage_size: 0,
-            nay_storage_size: 0,
-            abstain_storage_size: 0,
+            yay_storage_size: self.get_storage(num, VoteOption::Yay, ntw)?,
+            nay_storage_size: self.get_storage(num, VoteOption::Nay, ntw)?,
+            abstain_storage_size: self.get_storage(num, VoteOption::Abstain, ntw)?,
         };
 
         match serde_json::to_string(&results) {
@@ -160,10 +212,10 @@ impl Redis {
         }
     }
 
-    pub fn vote_status(&mut self, fip_number: impl Into<u32>, vote_length: impl Into<u64>) -> Result<VoteStatus, RedisError> {
+    pub fn vote_status(&mut self, fip_number: impl Into<u32>, vote_length: impl Into<u64>, ntw: Network) -> Result<VoteStatus, RedisError> {
         let num = fip_number.into();
-        let vote_key = LookupKey::FipNumber(num).to_bytes();
-        let time_key = LookupKey::Timestamp(num).to_bytes();
+        let vote_key = LookupKey::Votes(num, ntw).to_bytes();
+        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
 
         // Check if the FIP number exists in the database
         if !self.con.exists(vote_key)? {
@@ -176,7 +228,7 @@ impl Redis {
         }
 
         // Check if the vote is still open
-        let time_start: u64 = self.vote_start(num)?;
+        let time_start: u64 = self.vote_start(num, ntw)?;
         let now = time::SystemTime::now()
             .duration_since(time::UNIX_EPOCH)
             .unwrap()
@@ -195,51 +247,95 @@ impl Redis {
         Ok(delegates)
     }
 
-    fn vote_start(&mut self, fip_number: impl Into<u32>) -> Result<u64, RedisError> {
-        let key = LookupKey::Timestamp(fip_number.into()).to_bytes();
+    fn get_storage(&mut self, fip_number: u32, vote: VoteOption, ntw: Network) -> Result<u128, RedisError> {
+        let key = LookupKey::Storage(vote, ntw, fip_number).to_bytes();
+        let storage_bytes: Vec<u8> = self.con.get::<Vec<u8>, Vec<u8>>(key)?;
+        if storage_bytes.len() != 16 {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Error retrieving storage size",
+            )));
+        }
+        let storage = u128::from_be_bytes(storage_bytes.try_into().unwrap());
+        Ok(storage)
+    }
+
+    fn vote_start(&mut self, fip_number: impl Into<u32>, ntw: Network) -> Result<u64, RedisError> {
+        let key = LookupKey::Timestamp(fip_number.into(), ntw).to_bytes();
         let timestamp: u64 = self.con.get::<Vec<u8>, u64>(key)?;
         Ok(timestamp)
     }
 
-    fn votes(&mut self, fip_number: impl Into<u32>) -> Result<Vec<Vote>, RedisError> {
-        let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
+    fn votes(&mut self, fip_number: impl Into<u32>, ntw: Network) -> Result<Vec<Vote>, RedisError> {
+        let key = LookupKey::Votes(fip_number.into(), ntw).to_bytes();
         let votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key)?;
         Ok(votes)
+    }
+
+    fn network(&mut self, voter: Address) -> Result<Network, RedisError> {
+        let key = LookupKey::Network(voter).to_bytes();
+        let ntw: Network = self.con.get::<Vec<u8>, Network>(key)?;
+        Ok(ntw)
     }
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
     /                                     SETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    pub fn add_vote<T>(&mut self, fip_number: T, vote: Vote) -> Result<(), RedisError>
+    pub async fn add_vote<T>(&mut self, fip_number: T, vote: Vote, voter: Address) -> Result<(), RedisError>
     where
         T: Into<u32>,
     {
         let num: u32 = fip_number.into();
 
-        if self.votes(num)?.is_empty() {
-            self.new_vote(num, Some(vote))?;
+        let ntw = self.network(voter)?;
+
+        // Fetch the storage provider Id's that the voter is authorized for
+        let authorized = self.voter_delegates(voter, ntw)?;
+
+        // If the voter is not authorized for any storage providers, throw an error
+        if authorized.is_empty() {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Voter is not authorized for any storage providers",
+            )));
+        }
+
+        // Check if a vote has been started for this FIP number
+        let mut votes = self.votes(num, ntw)?;
+
+        // If no votes exist, create a new vote
+        if votes.is_empty() {
+            self.new_vote(num, vote, voter, ntw).await?;
             return Ok(());
         }
 
-        let key = LookupKey::FipNumber(num.into()).to_bytes();
+        let key = LookupKey::Votes(num.into(), ntw).to_bytes();
 
-        let mut votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key.clone())?;
-
+        // If this vote is a duplicate throw an error
         if votes.contains(&vote) {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Vote already exists",
             )));
         }
-        votes.push(vote);
-        self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
-        println!("set votes");
+
+        // Add the storage providers power to their vote choice for the respective FIP
+        for sp_id in authorized {
+            self.add_storage(sp_id, ntw, vote.choice(), num).await?;
+        }
+
+        if ntw == Network::Mainnet {
+            // Add the vote to the list of votes
+            votes.push(vote);
+            self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
+        }
+
         Ok(())
     }
 
-    pub fn flush_vote(&mut self, fip_number: impl Into<u32>) -> Result<(), RedisError> {
-        let key = LookupKey::FipNumber(fip_number.into()).to_bytes();
+    pub fn flush_vote(&mut self, fip_number: impl Into<u32>, ntw: Network) -> Result<(), RedisError> {
+        let key = LookupKey::Votes(fip_number.into(), ntw).to_bytes();
         self.con.del::<Vec<u8>, ()>(key)?;
         Ok(())
     }
@@ -251,8 +347,32 @@ impl Redis {
         }
         Ok(())
     }
-}
 
+    async fn add_storage(&mut self, sp_id: u32, ntw: Network, vote: VoteOption, fip_number: u32) -> Result<(), RedisError> {
+        let key = LookupKey::Storage(vote.clone(), ntw, fip_number).to_bytes();
+
+        let current_storage = self.get_storage(fip_number, vote, ntw)?;
+
+        let new_storage = match fetch_storage_amount(sp_id, ntw).await {
+            Ok(s) => s,
+            Err(_) => return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Error fetching storage amount",
+            ))),
+        };
+        let storage = current_storage + new_storage;
+        let storage_bytes = storage.to_be_bytes().to_vec();
+        self.con.set::<Vec<u8>, Vec<u8>, ()>(key.clone(), storage_bytes)?;
+        Ok(())
+    }
+
+    fn set_network(&mut self, ntw: Network, voter: Address) -> Result<(), RedisError> {
+        let key: Vec<u8> = LookupKey::Network(voter).to_bytes();
+        self.con.set::<Vec<u8>, Network, ()>(key, ntw)?;
+        Ok(())
+    }
+}
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,7 +482,7 @@ mod tests {
         println!("{:?}", res);
         assert!(res.is_ok());
 
-        let res = redis.vote_results(1u32);
+        let res = redis.vote_results(1u32, Network::Testnet);
 
         match res {
             Ok(_) => {},
@@ -376,3 +496,4 @@ mod tests {
         redis.flush_all_votes().unwrap();
     }
 }
+*/

@@ -1,4 +1,5 @@
 use jsonrpc::Response;
+use redis::{ToRedisArgs, FromRedisValue};
 use reqwest::Client;
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -10,6 +11,16 @@ const TESTNET_RPC: &str = "https://filecoin-calibration.chainup.net/rpc/v1";
 pub enum Network {
     Mainnet,
     Testnet,
+}
+
+#[derive(Debug, Error)]
+pub enum StorageFetchError {
+    #[error("reqwest error")]
+    Reqwest(#[from] reqwest::Error),
+    #[error("serde error")]
+    Serde(#[from] serde_json::Error),
+    #[error("no result")]
+    NoResult
 }
 
 pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Result<bool, StorageFetchError> {
@@ -78,12 +89,13 @@ pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Resu
     }
 }
 
-pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<u128, StorageFetchError> {
+pub async fn fetch_storage_amount(sp_id: u32, ntw: Network) -> Result<u128, StorageFetchError> {
     let client = Client::new();
     let rpc = match ntw {
         Network::Mainnet => MAINNET_RPC,
         Network::Testnet => TESTNET_RPC,
     };
+    let sp_id = sp_id_format(ntw, sp_id);
     let response = client
         .post(rpc)
         .header("Content-Type", "application/json")
@@ -115,14 +127,11 @@ pub async fn fetch_storage_amount(sp_id: String, ntw: Network) -> Result<u128, S
     }
 }
 
-#[derive(Debug, Error)]
-pub enum StorageFetchError {
-    #[error("reqwest error")]
-    Reqwest(#[from] reqwest::Error),
-    #[error("serde error")]
-    Serde(#[from] serde_json::Error),
-    #[error("no result")]
-    NoResult
+fn sp_id_format(ntw: Network, id: u32) -> String {
+    match ntw {
+        Network::Mainnet => format!("f0{}", id),
+        Network::Testnet => format!("t0{}", id),
+    }
 }
 
 impl Network {
@@ -134,13 +143,39 @@ impl Network {
     }
 }
 
+impl ToRedisArgs for Network {
+    fn write_redis_args<W: ?Sized>(&self, out: &mut W)
+    where
+        W: redis::RedisWrite,
+    {
+        match self {
+            Network::Mainnet => "mainnet".write_redis_args(out),
+            Network::Testnet => "testnet".write_redis_args(out),
+        }
+    }
+}
+
+impl FromRedisValue for Network {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        let s = String::from_redis_value(v)?;
+        match s.as_str() {
+            "mainnet" => Ok(Network::Mainnet),
+            "testnet" => Ok(Network::Testnet),
+            _ => Err(redis::RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Unknown network",
+            ))),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn storage_fetch_storage_amount_mainnet() {
-        let res = fetch_storage_amount("f01240".to_string(), Network::Mainnet).await;
+        let res = fetch_storage_amount(1240u32, Network::Mainnet).await;
 
         println!("{:?}", res);
         assert!(res.is_ok());
@@ -148,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn storage_fetch_storage_amount_testnet() {
-        let res = fetch_storage_amount("t06024".to_string(), Network::Testnet).await;
+        let res = fetch_storage_amount(6024u32, Network::Testnet).await;
 
         println!("{:?}", res);
         assert!(res.is_ok());
