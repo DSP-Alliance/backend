@@ -1,7 +1,7 @@
 pub mod redis;
 pub mod storage;
-pub mod votes;
 pub mod vote_registration;
+pub mod votes;
 
 use std::str::FromStr;
 
@@ -11,7 +11,7 @@ use ethers::types::Address;
 use serde::Deserialize;
 use url::Url;
 
-use crate::{vote_registration::ReceivedVoterRegistration, storage::Network};
+use crate::{storage::Network, vote_registration::ReceivedVoterRegistration};
 
 use {
     crate::redis::{Redis, VoteStatus},
@@ -184,10 +184,15 @@ async fn register_vote(
     match status {
         VoteStatus::InProgress => (),
         VoteStatus::Concluded => {
-            println!("Vote concluded for FIP: {}", num);
-            return HttpResponse::Forbidden().finish();
+            let resp = format!("Vote concluded for FIP: {}", num);
+            println!("{}", resp);
+            return HttpResponse::Forbidden().body(resp);
         }
-        VoteStatus::DoesNotExist => (),
+        VoteStatus::DoesNotExist => {
+            let resp = format!("Vote has not started for FIP: {}", num);
+            println!("{}", resp);
+            return HttpResponse::NotFound().body(resp);
+        }
     }
 
     let choice = vote.choice();
@@ -201,10 +206,7 @@ async fn register_vote(
         }
     }
 
-    println!(
-        "Vote ({:?}) added for FIP: {}",
-        choice, num
-    );
+    println!("Vote ({:?}) added for FIP: {}", choice, num);
 
     HttpResponse::Ok().finish()
 }
@@ -252,7 +254,10 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
 }
 
 #[get("/filecoin/delegates")]
-async fn get_delegates(query_params: web::Query<DelegateParams>, config: web::Data<Args>) -> impl Responder {
+async fn get_delegates(
+    query_params: web::Query<DelegateParams>,
+    config: web::Data<Args>,
+) -> impl Responder {
     println!("Delegates requested");
 
     let ntw = match query_params.network.as_str() {
