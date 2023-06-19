@@ -171,6 +171,17 @@ impl Redis {
         Ok(())
     }
 
+    pub fn unregister_voter(&mut self, voter: VoterRegistration) -> Result<(), RedisError> {
+        let key = LookupKey::Voter(voter.ntw(), voter.address()).to_bytes();
+
+        // Remove the voter from the network lookup
+        self.remove_network(voter.address())?;
+
+        self.con.del::<Vec<u8>, ()>(key)?;
+
+        Ok(())
+    }
+
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
     /                                     GETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -369,9 +380,17 @@ impl Redis {
         Ok(())
     }
 
+    /// Creates a lookup from the voter to the network they are voting on
     fn set_network(&mut self, ntw: Network, voter: Address) -> Result<(), RedisError> {
         let key: Vec<u8> = LookupKey::Network(voter).to_bytes();
         self.con.set::<Vec<u8>, Network, ()>(key, ntw)?;
+        Ok(())
+    }
+
+    /// Removes the lookup from the voter to the network they are voting on
+    fn remove_network(&mut self, voter: Address) -> Result<(), RedisError> {
+        let key: Vec<u8> = LookupKey::Network(voter).to_bytes();
+        self.con.del::<Vec<u8>, ()>(key)?;
         Ok(())
     }
 }

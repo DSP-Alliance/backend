@@ -14,8 +14,8 @@ pub enum VoteRegistrationError {
     SignatureMismatch,
     #[error("Invalid message format")]
     InvalidMessageFormat,
-    #[error("Not a storage provider")]
-    NotStorageProvider,
+    #[error("Worker address: {0} does not control {1}")]
+    NotStorageProvider(String, String),
     #[error(transparent)]
     StorageFetchError(#[from] StorageFetchError),
     #[error("Invalid worker address")]
@@ -99,7 +99,7 @@ impl ReceivedVoterRegistration {
         for sp_id in sp_ids.clone() {
             match verify_id(sp_id.clone(), self.worker_address.clone(), ntw).await? {
                 true => (),
-                false => return Err(VoteRegistrationError::NotStorageProvider),
+                false => return Err(VoteRegistrationError::NotStorageProvider(self.worker_address.clone(), sp_id.clone())),
             };
             let id = u32::from_str(&sp_id[1..])?;
             new_ids.push(id);

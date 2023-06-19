@@ -141,7 +141,8 @@ async fn register_vote(
         Ok(v) => v,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
+            let res = format!("{}: {}", VOTE_DESERIALIZE_ERROR, e);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
@@ -150,7 +151,8 @@ async fn register_vote(
         Ok(vote) => vote,
         Err(e) => {
             println!("{}", e);
-            return HttpResponse::BadRequest().body(VOTE_RECOVER_ERROR);
+            let res = format!("{}: {}", VOTE_RECOVER_ERROR, e);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
@@ -243,6 +245,45 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
 
     // Add the vote to the database
     match redis.register_voter(registration) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
+        }
+    }
+
+    HttpResponse::Ok().finish()
+}
+
+#[post("/filecoin/unregister")]
+async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Responder {
+    println!("Voter unregistration received");
+
+    let reg: ReceivedVoterRegistration = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
+        }
+    };
+
+    let registration = match reg.recover_vote_registration().await {
+        Ok(registration) => registration,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::BadRequest().body(VOTE_RECOVER_ERROR);
+        }
+    };
+
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            println!("{}", e);
+            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+        }
+    };
+
+    match redis.unregister_voter(registration) {
         Ok(_) => (),
         Err(e) => {
             println!("{}", e);

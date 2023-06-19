@@ -57,3 +57,15 @@ The returned json will be in the format below.
         "f0125"
     ]
 ```
+
+so i have a command output that looks like
+name         ID        key          use      balance
+owner        t06017    t3roht...             100
+worker       t06016    t3qejy...    other    1372
+
+and another command output that looks lke
+Address                                                                                      Balance    Nonce
+t3xglc5hd5m5c6nov2lcahiavn4pl525qzhu4ys6g52bdtnvgfmkfmit4ajlruu7kxo7xydjfj6h7h25s6rq5q       1372       9088
+t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa       100        317
+
+I want to extract the worker address. The first few letters of the key are t3qejy from the first command output. But I want the full address which is outputed in the last command output. What is a bash one liner to put that full address to stdout
