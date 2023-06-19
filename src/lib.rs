@@ -94,8 +94,9 @@ async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>)
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
@@ -103,8 +104,9 @@ async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>)
     let status = match redis.vote_status(num, config.vote_length(), ntw) {
         Ok(status) => status,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
+            let res = format!("{}: {}", VOTE_STATUS_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
@@ -117,8 +119,9 @@ async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>)
             let vote_results = match redis.vote_results(num, ntw) {
                 Ok(results) => results,
                 Err(e) => {
-                    println!("{}", e);
-                    return HttpResponse::InternalServerError().body(VOTE_RESULTS_ERROR);
+                    let res = format!("{}: {}", VOTE_RESULTS_ERROR, e);
+                    println!("{}", res);
+                    return HttpResponse::InternalServerError().body(res);
                 }
             };
             HttpResponse::Ok().json(vote_results)
@@ -140,8 +143,8 @@ async fn register_vote(
     let vote: ReceivedVote = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
-            println!("{}", e);
             let res = format!("{}: {}", VOTE_DESERIALIZE_ERROR, e);
+            println!("{}", res);
             return HttpResponse::BadRequest().body(res);
         }
     };
@@ -150,8 +153,8 @@ async fn register_vote(
     let vote = match vote.vote() {
         Ok(vote) => vote,
         Err(e) => {
-            println!("{}", e);
             let res = format!("{}: {}", VOTE_RECOVER_ERROR, e);
+            println!("{}", res);
             return HttpResponse::BadRequest().body(res);
         }
     };
@@ -162,24 +165,27 @@ async fn register_vote(
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
     let ntw = match redis.network(voter) {
         Ok(ntw) => ntw,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(INVALID_ADDRESS);
+            let res = format!("{}: {}", INVALID_ADDRESS, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
     let status = match redis.vote_status(num, config.vote_length(), ntw) {
         Ok(status) => status,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
+            let res = format!("{}: {}", VOTE_STATUS_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
@@ -203,8 +209,9 @@ async fn register_vote(
     match redis.add_vote(num, vote, voter).await {
         Ok(_) => (),
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
+            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     }
 
@@ -221,16 +228,18 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     let reg: ReceivedVoterRegistration = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
+            let res = format!("{}: {}", VOTE_DESERIALIZE_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
     let registration = match reg.recover_vote_registration().await {
         Ok(registration) => registration,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::BadRequest().body(VOTE_RECOVER_ERROR);
+            let res = format!("{}: {}", VOTE_RECOVER_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
@@ -238,8 +247,9 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
@@ -247,8 +257,9 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     match redis.register_voter(registration) {
         Ok(_) => (),
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
+            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     }
 
@@ -262,32 +273,36 @@ async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Res
     let reg: ReceivedVoterRegistration = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::BadRequest().body(VOTE_DESERIALIZE_ERROR);
+            let res = format!("{}: {}", VOTE_DESERIALIZE_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
     let registration = match reg.recover_vote_registration().await {
         Ok(registration) => registration,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::BadRequest().body(VOTE_RECOVER_ERROR);
+            let res = format!("{}: {}", VOTE_RECOVER_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
     match redis.unregister_voter(registration) {
         Ok(_) => (),
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(VOTE_ADD_ERROR);
+            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     }
 
@@ -311,8 +326,9 @@ async fn get_delegates(
     let address = match Address::from_str(address.as_str()) {
         Ok(address) => address,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::BadRequest().body(INVALID_ADDRESS);
+            let res = format!("{}: {}", INVALID_ADDRESS, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
         }
     };
 
@@ -320,8 +336,9 @@ async fn get_delegates(
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(OPEN_CONNECTION_ERROR);
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
@@ -329,8 +346,9 @@ async fn get_delegates(
     let delegates = match redis.voter_delegates(address, ntw) {
         Ok(delegates) => delegates,
         Err(e) => {
-            println!("{}", e);
-            return HttpResponse::InternalServerError().body(VOTE_STATUS_ERROR);
+            let res = format!("{}: {}", VOTE_STATUS_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
         }
     };
 
