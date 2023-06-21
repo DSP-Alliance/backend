@@ -11,7 +11,7 @@ use ethers::types::Address;
 use serde::Deserialize;
 use url::Url;
 
-use crate::{storage::Network, vote_registration::ReceivedVoterRegistration};
+use crate::{storage::{Network, fetch_storage_amount}, vote_registration::ReceivedVoterRegistration};
 
 use {
     crate::redis::{Redis, VoteStatus},
@@ -25,6 +25,8 @@ const VOTE_RESULTS_ERROR: &str = "Error getting vote results";
 const VOTE_DESERIALIZE_ERROR: &str = "Error deserializing vote";
 const VOTE_RECOVER_ERROR: &str = "Error recovering vote";
 const VOTE_ADD_ERROR: &str = "Error adding vote";
+const VOTER_DELEGATES_ERROR: &str = "Error getting voter delegates";
+const VOTING_POWER_ERROR: &str = "Error getting voting power";
 const INVALID_NETWORK: &str = "Invalid network";
 const INVALID_ADDRESS: &str = "Invalid address";
 
@@ -346,7 +348,7 @@ async fn get_delegates(
     let delegates = match redis.voter_delegates(address, ntw) {
         Ok(delegates) => delegates,
         Err(e) => {
-            let res = format!("{}: {}", VOTE_STATUS_ERROR, e);
+            let res = format!("{}: {}", VOTER_DELEGATES_ERROR, e);
             println!("{}", res);
             return HttpResponse::InternalServerError().body(res);
         }
@@ -364,4 +366,58 @@ async fn get_delegates(
     }
 
     HttpResponse::Ok().json(dgts)
+}
+
+#[get("/filecoin/votingpower")]
+async fn get_voting_power(
+    query_params: web::Query<DelegateParams>,
+    config: web::Data<Args>
+) -> impl Responder {
+    let address = query_params.address.clone();
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    let address = match Address::from_str(address.as_str()) {
+        Ok(address) => address,
+        Err(e) => {
+            let res = format!("{}: {}", INVALID_ADDRESS, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    let authorized = match redis.voter_delegates(address, ntw) {
+        Ok(delegates) => delegates,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_DELEGATES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    let mut voting_power = 0;
+    for delegate in authorized {
+        match fetch_storage_amount(delegate, ntw).await {
+            Ok(amount) => voting_power += amount,
+            Err(e) => {
+                let res = format!("{}: {}", VOTING_POWER_ERROR, e);
+                println!("{}", res);
+                return HttpResponse::InternalServerError().body(res);
+            }
+        }
+    }
+
+    HttpResponse::Ok().body(voting_power.to_string())
 }
