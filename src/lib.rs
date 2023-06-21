@@ -116,7 +116,7 @@ async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>)
 
     // Return the appropriate response
     match status {
-        VoteStatus::InProgress => HttpResponse::Forbidden().finish(),
+        VoteStatus::InProgress(time_left) => HttpResponse::Forbidden().body(time_left.to_string()),
         VoteStatus::Concluded => {
             let vote_results = match redis.vote_results(num, ntw) {
                 Ok(results) => results,
@@ -192,7 +192,7 @@ async fn register_vote(
     };
 
     match status {
-        VoteStatus::InProgress => (),
+        VoteStatus::InProgress(_) => (),
         VoteStatus::Concluded => {
             let resp = format!("Vote concluded for FIP: {}", num);
             println!("{}", resp);

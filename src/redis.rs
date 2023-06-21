@@ -16,7 +16,7 @@ pub struct Redis {
 #[derive(Debug, PartialEq)]
 pub enum VoteStatus {
     DoesNotExist,
-    InProgress,
+    InProgress(u64),
     Concluded,
 }
 
@@ -245,8 +245,10 @@ impl Redis {
             .unwrap()
             .as_secs();
 
-        if now - time_start < vote_length.into() {
-            return Ok(VoteStatus::InProgress);
+        let vote_length = vote_length.into();
+
+        if now - time_start < vote_length {
+            return Ok(VoteStatus::InProgress(time_start + vote_length - now));
         } else {
             return Ok(VoteStatus::Concluded);
         }
@@ -492,7 +494,7 @@ mod tests {
             Ok(_) => {},
             Err(e) => panic!("Error: {}", e),
         }
-        assert_eq!(res.unwrap(), VoteStatus::InProgress);
+        assert_eq!(res.unwrap(), VoteStatus::InProgress(1));
 
         let res = redis.vote_status(3u32, concluded, Network::Testnet);
 
