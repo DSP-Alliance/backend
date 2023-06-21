@@ -21,7 +21,7 @@ For example: `YAY: FIP-123`, `NAY: FIP-1`, or `ABSTAIN: FIP-789`
 
 This is the main endpoint being hit from the frontend to cast votes.
 
-If the vote is in progress then a 403 error will be returned. If the vote does not exist then a 404 error will be returned.
+If the vote is in progress then a 403 error will be returned and the HTTP body will be the amount of time left for the vote in seconds. If the vote does not exist then a 404 error will be returned.
 
 ## GET Requests
 
