@@ -1,12 +1,14 @@
 pub mod redis;
 pub mod storage;
-pub mod vote_registration;
-pub mod votes;
-pub mod auth;
+pub mod messages {
+    pub mod vote_registration;
+    pub mod votes;
+    pub mod auth;
+    pub mod vote_start;
+}
 pub mod post;
 pub mod get;
 pub mod errors;
-pub mod vote_start;
 
 use clap::{arg, command, Parser};
 use serde::Deserialize;

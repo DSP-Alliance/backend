@@ -319,7 +319,7 @@ pub mod test_votes {
 mod votes_test {
     use redis::Value;
 
-    use crate::votes::test_votes::test_vote;
+    use super::test_votes::test_vote;
 
     use super::*;
 

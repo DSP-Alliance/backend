@@ -2,11 +2,12 @@ use actix_web::{post, web, HttpResponse, Responder};
 
 use crate::{
     errors::*,
-    auth::VoterAuthorization,
+    messages::{
+        auth::VoterAuthorization, vote_registration::ReceivedVoterRegistration, votes::ReceivedVote, vote_start::VoteStart,
+    },
     redis::{Redis, VoteStatus},
     storage::Network,
-    vote_registration::ReceivedVoterRegistration,
-    votes::ReceivedVote, Args, FipParams, NtwParams,
+    Args, FipParams, NtwParams,
 };
 
 #[post("/filecoin/vote")]
@@ -96,9 +97,62 @@ async fn register_vote(
 }
 
 #[post("/filecoin/startvote")]
-async fn start_vote(body: web::Bytes, config: web::Data<Args>) -> impl Responder {
+async fn start_vote(
+    body: web::Bytes,
+    query_params: web::Query<NtwParams>,
+    config: web::Data<Args>
+) -> impl Responder {
+    println!("Vote start received");
 
-    HttpResponse::Ok().finish()
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => {
+            let res = format!("{}: {}", INVALID_NETWORK, query_params.network);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    // Deserialize the body into the vote start struct
+    let start: VoteStart = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            let res = format!("{}: {}", VOTE_DESERIALIZE_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    // Open a connection to the redis database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    let (starter, fip) = match start.auth() {
+        Ok(auth) => auth,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    match redis.start_vote(fip, starter, ntw).await {
+        Ok(_) => (),
+        Err(e) => {
+            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    }
+
+    HttpResponse::Ok().body(config.vote_length().to_string())
 }
 
 #[post("/filecoin/register")]
@@ -194,7 +248,7 @@ async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Res
 async fn register_vote_starter(
     query_params: web::Query<NtwParams>,
     body: web::Bytes,
-    config: web::Data<Args>
+    config: web::Data<Args>,
 ) -> impl Responder {
     let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,

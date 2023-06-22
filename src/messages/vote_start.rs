@@ -3,25 +3,35 @@ use std::str::FromStr;
 use ethers::{types::{Address, Signature}};
 use serde::Deserialize;
 
-use crate::votes::VoteError;
+use super::votes::VoteError;
 
 
 #[derive(Deserialize, Debug)]
-pub struct VoterAuthorization {
+pub struct VoteStart {
     signature: String,
     message: String,
 }
 
-impl VoterAuthorization {
-    /// Returns a tuple of (signer, authorized address)
-    pub fn auth(&self) -> Result<(Address, Address), VoteError> {
+impl VoteStart {
+    /// Returns a tuple of (signer, fip)
+    pub fn auth(&self) -> Result<(Address, u32), VoteError> {
         let signer = self.pub_key()?;
-        let address = match Address::from_str(&self.message) {
-            Ok(address) => address,
+        let fip = self.fip()?;
+
+        Ok((signer, fip))
+    }
+    fn fip(&self) -> Result<u32, VoteError> {
+        // Message is in the format "FIP-XXX"
+        let fip = match self.message.split('-').nth(1) {
+            Some(fip) => fip,
+            None => return Err(VoteError::InvalidMessageFormat),
+        };
+        // convert to u32
+        let fip = match fip.parse::<u32>() {
+            Ok(fip) => fip,
             Err(_) => return Err(VoteError::InvalidMessageFormat),
         };
-
-        Ok((signer, address))
+        Ok(fip)
     }
     fn pub_key(&self) -> Result<Address, VoteError> {
         let signature = Signature::from_str(&self.signature)?;

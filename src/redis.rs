@@ -7,7 +7,12 @@ use redis::{Commands, Connection, RedisError};
 use serde::Serialize;
 use url::Url;
 
-use crate::{votes::{Vote, VoteOption}, vote_registration::VoterRegistration, storage::{Network, fetch_storage_amount}, STARTING_AUTHORIZED_VOTER};
+use crate::{
+    messages::{
+        votes::{Vote, VoteOption},
+        vote_registration::VoterRegistration,
+    },
+    storage::{Network, fetch_storage_amount}, STARTING_AUTHORIZED_VOTER};
 
 pub struct Redis {
     con: Connection,
@@ -111,6 +116,33 @@ impl Redis {
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
     /                                 INITIALIZATION                                 /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+    pub async fn start_vote(&mut self, fip_number: impl Into<u32>, signer: Address, ntw: Network) -> Result<(), RedisError> {
+        let num = fip_number.into();
+
+        // Check if signer is authorized to start a vote
+        if !self.is_authorized_starter(signer, ntw)? {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Signer is not authorized to start a vote",
+            )));
+        }
+
+        let vote_key = LookupKey::Votes(num, ntw).to_bytes();
+        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
+
+        // Set a map of FIP number to vector of all votes
+        self.con.set::<Vec<u8>, Vec<Vote>, ()>(vote_key, vec![])?;
+
+        // Set a map of FIP to timestamp of vote start
+        let timestamp = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
+
+        Ok(())
+    }
 
     /// Creates a new vote in the database
     /// 
@@ -460,8 +492,10 @@ mod tests {
 
     use super::*;
 
-    use crate::votes::test_votes::*;
-    use crate::vote_registration::test_voter_registration::*;
+    use crate::messages::{
+        vote_registration::test_voter_registration::*,
+        votes::test_votes::*,
+    };
 
     async fn redis() -> Redis {
         let url = Url::parse("redis://127.0.0.1:6379").unwrap();
