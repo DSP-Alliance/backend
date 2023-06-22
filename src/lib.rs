@@ -2,6 +2,7 @@ pub mod redis;
 pub mod storage;
 pub mod vote_registration;
 pub mod votes;
+pub mod auth;
 
 use std::str::FromStr;
 
@@ -11,12 +12,14 @@ use ethers::types::Address;
 use serde::Deserialize;
 use url::Url;
 
-use crate::{storage::{Network, fetch_storage_amount}, vote_registration::ReceivedVoterRegistration};
+use crate::{storage::{Network, fetch_storage_amount}, vote_registration::ReceivedVoterRegistration, auth::VoterAuthorization};
 
 use {
     crate::redis::{Redis, VoteStatus},
     votes::ReceivedVote,
 };
+
+const STARTING_AUTHORIZED_VOTER: &str = "0x3B9705F0EF88Ee74B9924e34A5Af578d2E24F300";
 
 // Error messages
 const OPEN_CONNECTION_ERROR: &str = "Error opening connection to in-memory database";
@@ -25,6 +28,10 @@ const VOTE_RESULTS_ERROR: &str = "Error getting vote results";
 const VOTE_DESERIALIZE_ERROR: &str = "Error deserializing vote";
 const VOTE_RECOVER_ERROR: &str = "Error recovering vote";
 const VOTE_ADD_ERROR: &str = "Error adding vote";
+const VOTER_AUTH_DESERIALIZE_ERROR: &str = "Error deserializing voter authorization";
+const VOTER_AUTH_RECOVER_ERROR: &str = "Error recovering voter authorization";
+const VOTER_NOT_AUTHORIZED_ERROR: &str = "Voter not authorized to add new signers";
+const VOTER_AUTH_ERROR: &str = "Error getting voter authorization";
 const VOTER_DELEGATES_ERROR: &str = "Error getting voter delegates";
 const VOTING_POWER_ERROR: &str = "Error getting voting power";
 const INVALID_NETWORK: &str = "Invalid network";
@@ -65,13 +72,13 @@ impl Args {
 }
 
 #[derive(Deserialize)]
-struct NtwParams {
+struct NtwFipParams {
     network: String,
     fip_number: u32,
 }
 
 #[derive(Deserialize)]
-struct DelegateParams {
+struct NtwAddrParams {
     network: String,
     address: String,
 }
@@ -81,8 +88,13 @@ struct FipParams {
     fip_number: u32,
 }
 
+#[derive(Deserialize)]
+struct NtwParams {
+
+}
+
 #[get("/filecoin/vote")]
-async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>) -> impl Responder {
+async fn get_votes(query_params: web::Query<NtwFipParams>, config: web::Data<Args>) -> impl Responder {
     println!("votes requested");
 
     let ntw = match query_params.network.as_str() {
@@ -128,6 +140,7 @@ async fn get_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>)
             };
             HttpResponse::Ok().json(vote_results)
         }
+        VoteStatus::Started => HttpResponse::Ok().body("Vote has no votes yet"),
         VoteStatus::DoesNotExist => HttpResponse::NotFound().finish(),
     }
 }
@@ -198,7 +211,8 @@ async fn register_vote(
             println!("{}", resp);
             return HttpResponse::Forbidden().body(resp);
         }
-        VoteStatus::DoesNotExist => ()
+        VoteStatus::DoesNotExist => (),
+        VoteStatus::Started => (),
     }
 
     let choice = vote.choice();
@@ -309,7 +323,7 @@ async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Res
 
 #[get("/filecoin/delegates")]
 async fn get_delegates(
-    query_params: web::Query<DelegateParams>,
+    query_params: web::Query<NtwAddrParams>,
     config: web::Data<Args>,
 ) -> impl Responder {
     println!("Delegates requested");
@@ -366,7 +380,7 @@ async fn get_delegates(
 
 #[get("/filecoin/votingpower")]
 async fn get_voting_power(
-    query_params: web::Query<DelegateParams>,
+    query_params: web::Query<NtwAddrParams>,
     config: web::Data<Args>
 ) -> impl Responder {
     let address = query_params.address.clone();
@@ -416,4 +430,69 @@ async fn get_voting_power(
     }
 
     HttpResponse::Ok().body(voting_power.to_string())
+}
+
+#[post("/filecoin/registerstarter")]
+async fn register_vote_starter(
+    query_params: web::Query<NtwAddrParams>,
+    body: web::Bytes,
+    config: web::Data<Args>
+) -> impl Responder {
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    let auth: VoterAuthorization = match serde_json::from_slice(&body) {
+        Ok(auth) => auth,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_DESERIALIZE_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    let (signer, new_signer) = match auth.auth() {
+        Ok(signer) => signer,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_RECOVER_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    match redis.is_authorized_starter(signer, ntw) {
+        Ok(true) => (),
+        Ok(false) => {
+            let res = format!("{}: {}", VOTER_NOT_AUTHORIZED_ERROR, signer);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    }
+
+    match redis.register_voter_starter(vec![new_signer], ntw) {
+        Ok(_) => (),
+        Err(e) => {
+            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    }
+
+    HttpResponse::Ok().finish()
 }

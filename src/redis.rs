@@ -1,13 +1,13 @@
 extern crate redis;
 
-use std::{mem::MaybeUninit, time};
+use std::{mem::MaybeUninit, time, str::FromStr};
 
 use ethers::types::Address;
 use redis::{Commands, Connection, RedisError};
 use serde::Serialize;
 use url::Url;
 
-use crate::{votes::{Vote, VoteOption}, vote_registration::VoterRegistration, storage::{Network, fetch_storage_amount}};
+use crate::{votes::{Vote, VoteOption}, vote_registration::VoterRegistration, storage::{Network, fetch_storage_amount}, STARTING_AUTHORIZED_VOTER};
 
 pub struct Redis {
     con: Connection,
@@ -18,6 +18,7 @@ pub enum VoteStatus {
     DoesNotExist,
     InProgress(u64),
     Concluded,
+    Started,
 }
 
 enum LookupKey {
@@ -31,6 +32,7 @@ enum LookupKey {
     Voter(Network, Address),
     /// The network the address belongs to
     Network(Address),
+    VoteStarters(Network),
 }
 
 impl LookupKey {
@@ -68,6 +70,10 @@ impl LookupKey {
                 let mut bytes = Vec::with_capacity(21);
                 bytes.push(2);
                 bytes.extend_from_slice(voter);
+                return bytes;
+            }
+            LookupKey::VoteStarters(ntw) => {
+                let bytes = vec![8,0,0,8,1,3,5, *ntw as u8];
                 return bytes;
             }
         };
@@ -121,6 +127,13 @@ impl Redis {
         ntw: Network,
     ) -> Result<(), RedisError> {
         let num = fip_number.into();
+
+        if !self.is_authorized_starter(voter, ntw)? || voter != Address::from_str(STARTING_AUTHORIZED_VOTER).unwrap() {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Voter is not authorized to start a vote",
+            )));
+        }
 
         // Fetch the storage provider Id's that the voter is authorized for
         let authorized = self.voter_delegates(voter, ntw)?;
@@ -182,9 +195,30 @@ impl Redis {
         Ok(())
     }
 
+    pub fn register_voter_starter(&mut self, voters: Vec<Address>, ntw: Network) -> Result<(), RedisError> {
+        let key = LookupKey::VoteStarters(ntw).to_bytes();
+
+
+        let mut current_voters = self.voter_starters(ntw)?;
+
+        current_voters.extend(voters);
+
+        let new_bytes = current_voters.into_iter().flat_map(|v| v.as_fixed_bytes().to_vec()).collect::<Vec<u8>>();
+
+        self.con.set::<Vec<u8>, Vec<u8>, ()>(key, new_bytes)?;
+
+        Ok(())
+    }
+
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
     /                                     GETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+    pub fn is_authorized_starter(&mut self, voter: Address, ntw: Network) -> Result<bool, RedisError> {
+        let voters = self.voter_starters(ntw)?;
+
+        Ok(voters.contains(&voter))
+    }
 
     /// Returns a json blob of the vote results for the FIP number
     /// 
@@ -258,6 +292,30 @@ impl Redis {
         let key = LookupKey::Voter(ntw, voter).to_bytes();
         let delegates: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
         Ok(delegates)
+    }
+
+    pub fn voter_starters(&mut self, ntw: Network) -> Result<Vec<Address>, RedisError> {
+        let key = LookupKey::VoteStarters(ntw).to_bytes();
+
+        let bytes: Vec<u8> = self.con.get::<Vec<u8>, Vec<u8>>(key)?;
+
+        if bytes.len() % 20 != 0 {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Error retrieving vote starters, invalid length",
+            )));
+        }
+        let addr_length = bytes.len() / 20;
+
+        let mut starters: Vec<Address> = Vec::with_capacity(addr_length);
+        for i in 0..addr_length {
+            let start = i * 20;
+            let end = start + 20;
+            let addr = Address::from_slice( &bytes[start..end]);
+            starters.push(addr);
+        }
+
+        Ok(starters)
     }
 
     fn get_storage(&mut self, fip_number: u32, vote: VoteOption, ntw: Network) -> Result<u128, RedisError> {
