@@ -7,7 +7,7 @@ use crate::{
     errors::*,
     redis::{Redis, VoteStatus},
     storage::{fetch_storage_amount, Network},
-    NtwFipParams, Args, NtwAddrParams,
+    NtwFipParams, Args, NtwAddrParams, NtwParams,
 };
 
 #[get("/filecoin/vote")]
@@ -173,4 +173,38 @@ async fn get_voting_power(
     }
 
     HttpResponse::Ok().body(voting_power.to_string())
+}
+
+#[get("/filecoin/voterstarters")]
+async fn get_vote_starters(
+    query_params: web::Query<NtwParams>,
+    config: web::Data<Args>,
+) -> impl Responder {
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    // Open a connection to the Redis Database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    // Get authorized vote starters
+    let vote_starters = match redis.voter_starters(ntw) {
+        Ok(vote_starters) => vote_starters,
+        Err(e) => {
+            let res = format!("{}: {}", VOTE_STARTERS_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    HttpResponse::Ok().json(vote_starters)
 }
