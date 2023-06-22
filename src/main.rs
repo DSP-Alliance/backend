@@ -3,8 +3,8 @@ use actix_cors::Cors;
 
 use fip_voting::{
     Args,
-    get_votes,
-    register_vote, get_delegates, register_voter, unregister_voter, get_voting_power
+    get::{get_votes, get_delegates, get_voting_power},
+    post::{register_vote, register_voter, unregister_voter},
 };
 
 

@@ -18,7 +18,6 @@ pub enum VoteStatus {
     DoesNotExist,
     InProgress(u64),
     Concluded,
-    Started,
 }
 
 enum LookupKey {
