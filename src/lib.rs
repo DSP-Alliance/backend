@@ -198,11 +198,7 @@ async fn register_vote(
             println!("{}", resp);
             return HttpResponse::Forbidden().body(resp);
         }
-        VoteStatus::DoesNotExist => {
-            let resp = format!("Vote has not started for FIP: {}", num);
-            println!("{}", resp);
-            return HttpResponse::NotFound().body(resp);
-        }
+        VoteStatus::DoesNotExist => ()
     }
 
     let choice = vote.choice();
