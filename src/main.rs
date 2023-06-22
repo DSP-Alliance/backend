@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpServer};
+use actix_cors::Cors;
 
 use fip_voting::{
     Args,
@@ -20,7 +21,14 @@ async fn main() -> std::io::Result<()> {
     };
 
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(web::Data::new(args.clone()))
             .service(get_votes)
             .service(register_vote)
