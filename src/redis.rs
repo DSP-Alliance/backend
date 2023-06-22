@@ -117,22 +117,19 @@ impl Redis {
     /                                 INITIALIZATION                                 /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
+    /// Starts a new vote in the database but does not add any votes into the database
     pub async fn start_vote(&mut self, fip_number: impl Into<u32>, signer: Address, ntw: Network) -> Result<(), RedisError> {
         let num = fip_number.into();
 
         // Check if signer is authorized to start a vote
-        if !self.is_authorized_starter(signer, ntw)? {
+        if !self.is_authorized_starter(signer, ntw)? && signer != Address::from_str(STARTING_AUTHORIZED_VOTER).unwrap(){
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Signer is not authorized to start a vote",
             )));
         }
 
-        let vote_key = LookupKey::Votes(num, ntw).to_bytes();
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
-
-        // Set a map of FIP number to vector of all votes
-        self.con.set::<Vec<u8>, Vec<Vote>, ()>(vote_key, vec![])?;
 
         // Set a map of FIP to timestamp of vote start
         let timestamp = time::SystemTime::now()
@@ -292,11 +289,6 @@ impl Redis {
         let num = fip_number.into();
         let vote_key = LookupKey::Votes(num, ntw).to_bytes();
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
-
-        // Check if the FIP number exists in the database
-        if !self.con.exists(vote_key)? {
-            return Ok(VoteStatus::DoesNotExist);
-        }
 
         // Check if the FIP number has a timestamp
         if !self.con.exists(time_key.clone())? {
@@ -516,6 +508,14 @@ mod tests {
         Address::from_str("0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56").unwrap()
     }
 
+    fn vote_starter() -> Address {
+        Address::from_str(STARTING_AUTHORIZED_VOTER).unwrap()
+    }
+
+    fn networks() -> Vec<Network> {
+        vec![Network::Mainnet, Network::Testnet]
+    }
+
     #[tokio::test]
     async fn redis_votes() {
         let mut redis = redis().await;
@@ -523,6 +523,27 @@ mod tests {
         let res = redis.votes(5u32, Network::Testnet);
 
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn redis_start_vote() {
+        let mut redis = redis().await;
+
+        let starter = vote_starter();
+
+        for ntw in networks() {
+            let res = redis.start_vote(5u32, starter, ntw).await;
+
+            assert!(res.is_ok());
+
+            let res = redis.vote_status(5u32, 60u64, ntw);
+
+            assert!(res.is_ok());
+
+            let status = res.unwrap();
+
+            assert_eq!(status, VoteStatus::InProgress(60u64))
+        }
     }
 
     #[tokio::test]
