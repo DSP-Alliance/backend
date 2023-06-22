@@ -155,6 +155,71 @@ async fn start_vote(
     HttpResponse::Ok().body(config.vote_length().to_string())
 }
 
+#[post("/filecoin/registerstarter")]
+async fn register_vote_starter(
+    query_params: web::Query<NtwParams>,
+    body: web::Bytes,
+    config: web::Data<Args>,
+) -> impl Responder {
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    let auth: VoterAuthorization = match serde_json::from_slice(&body) {
+        Ok(auth) => auth,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_DESERIALIZE_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    let (signer, new_signer) = match auth.auth() {
+        Ok(signer) => signer,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_RECOVER_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    match redis.is_authorized_starter(signer, ntw) {
+        Ok(true) => (),
+        Ok(false) => {
+            let res = format!("{}: {}", VOTER_NOT_AUTHORIZED_ERROR, signer);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_AUTH_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    }
+
+    match redis.register_voter_starter(vec![new_signer], ntw) {
+        Ok(_) => (),
+        Err(e) => {
+            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    }
+
+    HttpResponse::Ok().finish()
+}
+
 #[post("/filecoin/register")]
 async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Responder {
     println!("Voter registration received");
@@ -244,67 +309,3 @@ async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Res
     HttpResponse::Ok().finish()
 }
 
-#[post("/filecoin/registerstarter")]
-async fn register_vote_starter(
-    query_params: web::Query<NtwParams>,
-    body: web::Bytes,
-    config: web::Data<Args>,
-) -> impl Responder {
-    let ntw = match query_params.network.as_str() {
-        "mainnet" => Network::Mainnet,
-        "calibration" => Network::Testnet,
-        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
-    };
-
-    let auth: VoterAuthorization = match serde_json::from_slice(&body) {
-        Ok(auth) => auth,
-        Err(e) => {
-            let res = format!("{}: {}", VOTER_AUTH_DESERIALIZE_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::BadRequest().body(res);
-        }
-    };
-
-    let (signer, new_signer) = match auth.auth() {
-        Ok(signer) => signer,
-        Err(e) => {
-            let res = format!("{}: {}", VOTER_AUTH_RECOVER_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::BadRequest().body(res);
-        }
-    };
-
-    let mut redis = match Redis::new(config.redis_path()) {
-        Ok(redis) => redis,
-        Err(e) => {
-            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::InternalServerError().body(res);
-        }
-    };
-
-    match redis.is_authorized_starter(signer, ntw) {
-        Ok(true) => (),
-        Ok(false) => {
-            let res = format!("{}: {}", VOTER_NOT_AUTHORIZED_ERROR, signer);
-            println!("{}", res);
-            return HttpResponse::BadRequest().body(res);
-        }
-        Err(e) => {
-            let res = format!("{}: {}", VOTER_AUTH_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::InternalServerError().body(res);
-        }
-    }
-
-    match redis.register_voter_starter(vec![new_signer], ntw) {
-        Ok(_) => (),
-        Err(e) => {
-            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::InternalServerError().body(res);
-        }
-    }
-
-    HttpResponse::Ok().finish()
-}
