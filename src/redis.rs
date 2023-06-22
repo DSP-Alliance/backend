@@ -200,23 +200,21 @@ impl Redis {
     /// 
     /// * Creates a lookup from voters address to their respective network
     /// * Creates a lookup from voters address to their authorized storage providers
-    pub fn register_voter(&mut self, voter: VoterRegistration) -> Result<(), RedisError> {
-        let key = LookupKey::Voter(voter.ntw(), voter.address()).to_bytes();
+    pub fn register_voter(&mut self, voter: Address, ntw: Network, sp_ids: Vec<u32>) -> Result<(), RedisError> {
+        let key = LookupKey::Voter(ntw, voter).to_bytes();
 
-        self.set_network(voter.ntw(), voter.address())?;
+        self.set_network(ntw, voter)?;
 
-        let authorized = voter.sp_ids();
-
-        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, authorized)?;
+        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, sp_ids)?;
 
         Ok(())
     }
 
-    pub fn unregister_voter(&mut self, voter: VoterRegistration) -> Result<(), RedisError> {
-        let key = LookupKey::Voter(voter.ntw(), voter.address()).to_bytes();
+    pub fn unregister_voter(&mut self, voter: Address, ntw: Network) -> Result<(), RedisError> {
+        let key = LookupKey::Voter(ntw, voter).to_bytes();
 
         // Remove the voter from the network lookup
-        self.remove_network(voter.address())?;
+        self.remove_network(voter)?;
 
         self.con.del::<Vec<u8>, ()>(key)?;
 
@@ -313,7 +311,13 @@ impl Redis {
 
     pub fn voter_delegates(&mut self, voter: Address, ntw: Network) -> Result<Vec<u32>, RedisError> {
         let key = LookupKey::Voter(ntw, voter).to_bytes();
-        let delegates: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
+        let delegates: Vec<u32> = match self.con.get::<Vec<u8>, Vec<u32>>(key) {
+            Ok(d) => d,
+            Err(e) => match e.kind() {
+                redis::ErrorKind::TypeError => Vec::new(),
+                _ => return Err(e),
+            },
+        };
         Ok(delegates)
     }
 
@@ -499,7 +503,7 @@ mod tests {
 
         let vote_reg = test_reg().recover_vote_registration().await.unwrap();
 
-        redis.register_voter(vote_reg).unwrap();
+        redis.register_voter(vote_reg.address(), vote_reg.ntw(), vote_reg.sp_ids()).unwrap();
 
         redis
     }
@@ -547,6 +551,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn redis_register_voter() {
+        let mut redis = redis().await;
+
+        let res = redis.register_voter(vote_starter(), Network::Mainnet, vec![1u32]);
+
+        assert!(res.is_ok());
+
+        let ntw = redis.network(vote_starter());
+
+        assert!(ntw.is_ok());
+
+        let delegates = redis.voter_delegates(vote_starter(), Network::Mainnet);
+
+        assert!(delegates.is_ok());
+
+        let delegates = delegates.unwrap();
+
+        assert_eq!(delegates, vec![1u32]);
+    }
+
+    #[tokio::test]
+    async fn redis_unregister_voter() {
+        let mut redis = redis().await;
+
+        redis.register_voter(vote_starter(), Network::Mainnet, vec![1u32]).unwrap();
+
+        let res = redis.unregister_voter(vote_starter(), Network::Mainnet);
+
+        assert!(res.is_ok());
+
+        let ntw = redis.network(vote_starter());
+
+        assert!(ntw.is_err());
+
+        let delegates = redis.voter_delegates(vote_starter(), Network::Mainnet);
+
+        assert!(delegates.is_ok());
+        assert!(delegates.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn redis_get_storage() {
         let mut redis = redis().await;
 
@@ -569,7 +614,8 @@ mod tests {
         let mut redis = redis().await;
 
         let vote = test_vote(VoteOption::Yay, 4u32).vote().unwrap();
-        let res = redis.add_vote(4u32, vote, voter()).await;
+        let res = redis.add_vote(4u32, vote, vote_starter()).await;
+        println!("{:?}", res);
         assert!(res.is_ok());
 
         let res = redis.vote_start(4u32, Network::Testnet);
@@ -585,7 +631,7 @@ mod tests {
         let mut redis = redis().await;
 
         let vote = test_vote(VoteOption::Yay, 3u32).vote().unwrap();
-        assert!(redis.add_vote(3u32, vote, voter()).await.is_ok());
+        assert!(redis.add_vote(3u32, vote, vote_starter()).await.is_ok());
 
 
         let vote_start = redis.vote_start(3u32, Network::Testnet).unwrap();
@@ -631,7 +677,7 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, 2u32).vote().unwrap();
 
-        let res = redis.add_vote(2u32, vote, voter()).await;
+        let res = redis.add_vote(2u32, vote, vote_starter()).await;
 
         match res {
             Ok(_) => {},
@@ -644,7 +690,7 @@ mod tests {
         let mut redis = redis().await;
         let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
 
-        let res = redis.add_vote(1u32, vote, voter()).await;
+        let res = redis.add_vote(1u32, vote, vote_starter()).await;
         println!("{:?}", res);
         assert!(res.is_ok());
 

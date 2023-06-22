@@ -254,7 +254,7 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     };
 
     // Add the vote to the database
-    match redis.register_voter(registration) {
+    match redis.register_voter(registration.address(), registration.ntw(), registration.sp_ids()) {
         Ok(_) => (),
         Err(e) => {
             let res = format!("{}: {}", VOTE_ADD_ERROR, e);
@@ -297,7 +297,7 @@ async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Res
         }
     };
 
-    match redis.unregister_voter(registration) {
+    match redis.unregister_voter(registration.address(), registration.ntw()) {
         Ok(_) => (),
         Err(e) => {
             let res = format!("{}: {}", VOTE_ADD_ERROR, e);
