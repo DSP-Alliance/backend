@@ -10,11 +10,14 @@ pub mod post;
 pub mod get;
 pub mod errors;
 
+use std::str::FromStr;
+
 use clap::{arg, command, Parser};
+use ethers::types::Address;
 use serde::Deserialize;
 use url::Url;
 
-const STARTING_AUTHORIZED_VOTER: &str = "0x3B9705F0EF88Ee74B9924e34A5Af578d2E24F300";
+const STARTING_AUTHORIZED_VOTERS: [&str; 2] = ["0x3B9705F0EF88Ee74B9924e34A5Af578d2E24F300", "0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56"];
 
 // Default values for command line arguments
 const VOTE_LENGTH: &str = "60";
@@ -70,4 +73,8 @@ pub struct FipParams {
 #[derive(Deserialize)]
 pub struct NtwParams {
     network: String,
+}
+
+pub fn authorized_voters() -> Vec<Address> {
+    STARTING_AUTHORIZED_VOTERS.iter().map(|s| Address::from_str(s).unwrap()).collect()
 }

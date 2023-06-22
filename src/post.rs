@@ -208,7 +208,7 @@ async fn register_vote_starter(
         }
     }
 
-    match redis.register_voter_starter(vec![new_signer], ntw) {
+    match redis.register_voter_starter(new_signer, ntw) {
         Ok(_) => (),
         Err(e) => {
             let res = format!("{}: {}", VOTE_ADD_ERROR, e);
