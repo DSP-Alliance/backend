@@ -2,9 +2,10 @@ use actix_web::{web, App, HttpServer};
 use actix_cors::Cors;
 
 use fip_voting::{
+    redis::Redis,
     Args,
     get::{get_votes, get_delegates, get_voting_power, get_vote_starters},
-    post::{register_vote, register_voter, unregister_voter, register_vote_starter},
+    post::{register_vote, register_voter, unregister_voter, register_vote_starter}, authorized_voters, storage::Network,
 };
 
 
@@ -19,6 +20,15 @@ async fn main() -> std::io::Result<()> {
         Some(port) => port,
         None => 80
     };
+
+    let mut redis = Redis::new(args.redis_path()).unwrap();
+
+    let ntws = vec![Network::Mainnet, Network::Testnet];
+    for ntw in ntws {
+        for voter in authorized_voters() {
+            redis.register_voter_starter(voter, ntw).unwrap();
+        }
+    }
 
     HttpServer::new(move || {
         let cors = Cors::default()
