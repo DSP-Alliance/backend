@@ -146,7 +146,7 @@ async fn start_vote(
     match redis.start_vote(fip, starter, ntw).await {
         Ok(_) => (),
         Err(e) => {
-            let res = format!("{}: {}", VOTE_ADD_ERROR, e);
+            let res = format!("{}: {}", VOTE_START_ERROR, e);
             println!("{}", res);
             return HttpResponse::InternalServerError().body(res);
         }

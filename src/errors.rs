@@ -13,6 +13,8 @@ pub const VOTER_NOT_AUTHORIZED_ERROR: &str = "Voter not authorized to add new si
 pub const VOTER_AUTH_ERROR: &str = "Error getting voter authorization";
 pub const VOTER_DELEGATES_ERROR: &str = "Error getting voter delegates";
 
+pub const VOTE_START_ERROR: &str = "Error starting vote";
+
 pub const VOTE_STARTERS_ERROR: &str = "Error getting vote starters";
 
 pub const VOTING_POWER_ERROR: &str = "Error getting voting power";

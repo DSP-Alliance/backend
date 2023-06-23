@@ -238,6 +238,11 @@ impl Redis {
 
         current_votes.retain(|&x| x != fip);
 
+        if current_votes.is_empty() {
+            self.con.del::<Vec<u8>, ()>(key)?;
+            return Ok(())
+        }
+
         self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
 
         Ok(())
@@ -811,6 +816,51 @@ mod tests {
             let res = redis.is_registered(vote_starter(), ntw);
 
             assert!(!res);
+        }
+    }
+
+    #[tokio::test]
+    async fn redis_test_active_vote() {
+        let mut redis = redis().await;
+
+        for ntw in networks() {
+            let res = redis.register_active_vote(ntw, 87);
+
+            assert!(res.is_ok());
+
+            let res = redis.active_votes(ntw, None);
+
+            assert!(res.is_ok());
+
+            let votes = res.unwrap();
+            assert!(votes.contains(&87));
+
+            let res = redis.remove_active_vote(ntw, 87);
+
+            assert!(res.is_ok());
+
+            let res = redis.active_votes(ntw, None);
+
+            assert!(res.is_ok());
+            assert!(!res.unwrap().contains(&87));
+        }
+    }
+
+    #[tokio::test]
+    async fn redis_test_concluded_vote() {
+        let mut redis = redis().await;
+
+        for ntw in networks() {
+            let res = redis.register_concluded_vote(ntw, 89);
+
+            assert!(res.is_ok());
+
+            let res = redis.concluded_votes(ntw);
+
+            assert!(res.is_ok());
+
+            let votes = res.unwrap();
+            assert!(votes.contains(&89));
         }
     }
 
