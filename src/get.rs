@@ -126,6 +126,7 @@ async fn get_voting_power(
     query_params: web::Query<NtwAddrParams>,
     config: web::Data<Args>,
 ) -> impl Responder {
+    println!("Voting power requested");
     let address = query_params.address.clone();
     let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,
@@ -180,6 +181,7 @@ async fn get_vote_starters(
     query_params: web::Query<NtwParams>,
     config: web::Data<Args>,
 ) -> impl Responder {
+    println!("Vote starters requested");
     let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,
         "calibration" => Network::Testnet,
@@ -205,6 +207,8 @@ async fn get_vote_starters(
             return HttpResponse::InternalServerError().body(res);
         }
     };
+
+    println!("Vote starters: {:?}", vote_starters);
 
     HttpResponse::Ok().json(vote_starters)
 }

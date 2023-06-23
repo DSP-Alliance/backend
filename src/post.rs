@@ -161,6 +161,7 @@ async fn register_vote_starter(
     body: web::Bytes,
     config: web::Data<Args>,
 ) -> impl Responder {
+    println!("Vote starter registration received");
     let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,
         "calibration" => Network::Testnet,

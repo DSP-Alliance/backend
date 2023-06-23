@@ -669,6 +669,7 @@ mod tests {
             let res = redis.voter_starters(ntw);
 
             assert!(res.is_ok());
+            assert!(res.unwrap().contains(&voter()));
         }
     }
 
