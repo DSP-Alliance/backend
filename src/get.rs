@@ -212,3 +212,74 @@ async fn get_vote_starters(
 
     HttpResponse::Ok().json(vote_starters)
 }
+
+#[get("/filecoin/activevotes")]
+async fn get_active_votes(
+    query_params: web::Query<NtwParams>,
+    config: web::Data<Args>,
+) -> impl Responder {
+    println!("Active votes requested");
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    // Open a connection to the Redis Database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    // Get active votes
+    let active_votes = match redis.active_votes(ntw, Some(config.vote_length())) {
+        Ok(active_votes) => active_votes,
+        Err(e) => {
+            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    println!("Active votes: {:?}", active_votes);
+
+    HttpResponse::Ok().json(active_votes)
+}
+
+#[get("/filecoin/votehistory")]
+async fn get_concluded_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>) -> impl Responder {
+    println!("Concluded votes requested");
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    // Open a connection to the Redis Database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    // Get concluded votes
+    let concluded_votes = match redis.concluded_votes(ntw) {
+        Ok(concluded_votes) => concluded_votes,
+        Err(e) => {
+            let res = format!("{}: {}", CONCLUDED_VOTES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    println!("Concluded votes: {:?}", concluded_votes);
+
+    HttpResponse::Ok().json(concluded_votes)
+}

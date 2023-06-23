@@ -8,11 +8,9 @@ use serde::Serialize;
 use url::Url;
 
 use crate::{
-    messages::{
-        votes::{Vote, VoteOption},
-    },
-    storage::{fetch_storage_amount, Network},
     authorized_voters,
+    messages::votes::{Vote, VoteOption},
+    storage::{fetch_storage_amount, Network},
 };
 
 pub struct Redis {
@@ -37,8 +35,12 @@ enum LookupKey {
     Voter(Network, Address),
     /// The network the address belongs to
     Network(Address),
-    /// 
+    /// The voter authorized to start a vote on that network
     VoteStarters(Network),
+    /// Votes in progress on the network
+    ActiveVotes(Network),
+    /// Concluded votes on the network
+    ConcludedVotes(Network),
 }
 
 impl LookupKey {
@@ -78,6 +80,14 @@ impl LookupKey {
             }
             LookupKey::VoteStarters(ntw) => {
                 let bytes = vec![8, 0, 0, 8, 1, 3, 5, *ntw as u8];
+                return bytes;
+            }
+            LookupKey::ActiveVotes(ntw) => {
+                let bytes = vec![8, 0, 0, 8, 1, 3, 6, *ntw as u8];
+                return bytes;
+            }
+            LookupKey::ConcludedVotes(ntw) => {
+                let bytes = vec![8, 0, 0, 8, 1, 3, 7, *ntw as u8];
                 return bytes;
             }
         };
@@ -127,9 +137,7 @@ impl Redis {
         let num = fip_number.into();
 
         // Check if signer is authorized to start a vote
-        if !self.is_authorized_starter(signer, ntw)?
-            && !authorized_voters().contains(&signer)
-        {
+        if !self.is_authorized_starter(signer, ntw)? && !authorized_voters().contains(&signer) {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Signer is not authorized to start a vote",
@@ -144,6 +152,8 @@ impl Redis {
             .unwrap()
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
+
+        self.register_active_vote(ntw, num)?;
 
         Ok(())
     }
@@ -163,9 +173,7 @@ impl Redis {
     ) -> Result<(), RedisError> {
         let num = fip_number.into();
 
-        if !self.is_authorized_starter(voter, ntw)?
-            && !authorized_voters().contains(&voter)
-        {
+        if !self.is_authorized_starter(voter, ntw)? && !authorized_voters().contains(&voter) {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Voter is not authorized to start a vote",
@@ -197,6 +205,8 @@ impl Redis {
             .unwrap()
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
+
+        self.register_active_vote(ntw, num)?;
 
         // Add the storage providers power to their vote choice for the respective FIP
         for sp_id in authorized {
@@ -253,6 +263,51 @@ impl Redis {
             .collect::<Vec<u8>>();
 
         self.con.set::<Vec<u8>, Vec<u8>, ()>(key, new_bytes)?;
+
+        Ok(())
+    }
+
+    /// Adds FIP number to list of active votes
+    fn register_active_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
+        let key = LookupKey::ActiveVotes(ntw).to_bytes();
+
+        let mut current_votes = self.active_votes(ntw, None)?;
+
+        current_votes.push(fip);
+
+        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
+
+        Ok(())
+    }
+
+    /// Adds FIP number to list of concluded votes
+    ///
+    /// * Removes the FIP number from the list of active votes
+    fn register_concluded_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
+        let key = LookupKey::ConcludedVotes(ntw).to_bytes();
+
+        self.remove_active_vote(ntw, fip)?;
+
+        let mut current_votes = self.concluded_votes(ntw)?;
+
+        current_votes.push(fip);
+
+        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
+
+        Ok(())
+    }
+
+    /// Removes FIP number from list of active votes
+    /// 
+    /// Note: This function should only be called by "register_concluded_vote"
+    fn remove_active_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
+        let key = LookupKey::ActiveVotes(ntw).to_bytes();
+
+        let mut current_votes = self.active_votes(ntw, None)?;
+
+        current_votes.retain(|&x| x != fip);
+
+        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
 
         Ok(())
     }
@@ -428,6 +483,42 @@ impl Redis {
         let key = LookupKey::Network(voter).to_bytes();
         let ntw: Network = self.con.get::<Vec<u8>, Network>(key)?;
         Ok(ntw)
+    }
+
+    /// Fetches all active votes for a given network
+    /// 
+    /// If `vote_length` is provided, it will remove any concluded votes
+    pub fn active_votes(
+        &mut self,
+        ntw: Network,
+        vote_length: Option<u64>,
+    ) -> Result<Vec<u32>, RedisError> {
+        let key = LookupKey::ActiveVotes(ntw).to_bytes();
+
+        let fips: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
+
+        if let Some(vote_length) = vote_length {
+            let mut active = Vec::new();
+            for fip in fips {
+                let status = self.vote_status(fip, vote_length, ntw)?;
+                if let VoteStatus::Concluded = status {
+                    self.register_concluded_vote(ntw, fip)?;
+                } else {
+                    active.push(fip);
+                }
+            }
+            return Ok(active);
+        }
+
+        Ok(fips)
+    }
+
+    pub fn concluded_votes(&mut self, ntw: Network) -> Result<Vec<u32>, RedisError> {
+        let key = LookupKey::ConcludedVotes(ntw).to_bytes();
+
+        let fips: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
+
+        Ok(fips)
     }
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
