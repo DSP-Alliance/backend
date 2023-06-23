@@ -3,8 +3,8 @@ use actix_cors::Cors;
 
 use fip_voting::{
     Args,
-    get::{get_votes, get_delegates, get_voting_power},
-    post::{register_vote, register_voter, unregister_voter},
+    get::{get_votes, get_delegates, get_voting_power, get_vote_starters},
+    post::{register_vote, register_voter, unregister_voter, register_vote_starter},
 };
 
 
@@ -31,11 +31,13 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .app_data(web::Data::new(args.clone()))
             .service(get_votes)
-            .service(register_vote)
+            .service(get_voting_power)
+            .service(get_vote_starters)
             .service(get_delegates)
+            .service(register_vote)
             .service(register_voter)
             .service(unregister_voter)
-            .service(get_voting_power)
+            .service(register_vote_starter)
     })
     .bind((serve_address.host().unwrap().to_string(), port))?
     .run()
