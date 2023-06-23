@@ -27,92 +27,20 @@ pub enum VoteStatus {
 enum LookupKey {
     /// FIP number to vector of all votes
     Votes(u32, Network),
-    /// VoteChoice and FIP number to total storage amount
-    Storage(VoteOption, Network, u32),
     /// FIP number to timestamp of vote start
     Timestamp(u32, Network),
     /// Network and voter address to voter registration
     Voter(Network, Address),
-    /// The network the address belongs to
-    Network(Address),
     /// The voter authorized to start a vote on that network
     VoteStarters(Network),
     /// Votes in progress on the network
     ActiveVotes(Network),
     /// Concluded votes on the network
     ConcludedVotes(Network),
-}
-
-impl LookupKey {
-    fn to_bytes(&self) -> Vec<u8> {
-        let (lookup_type, fip) = match self {
-            // The first bit will be 0 or 1
-            LookupKey::Votes(fip, ntw) => (*ntw as u8, fip),
-            // The first bit will range between 2 and 8
-            LookupKey::Storage(choice, ntw, fip) => {
-                let choice = match choice {
-                    VoteOption::Yay => 2,
-                    VoteOption::Nay => 3,
-                    VoteOption::Abstain => 4,
-                };
-                let nt = *ntw as u8 + 1; // 1 or 2
-                (choice * nt, fip)
-            }
-            // The first bit will be 9 or 10
-            LookupKey::Timestamp(fip, ntw) => (9 + *ntw as u8, fip),
-            LookupKey::Voter(ntw, voter) => {
-                let ntw = match ntw {
-                    Network::Mainnet => 0,
-                    Network::Testnet => 1,
-                };
-                let voter = voter.as_bytes();
-                let mut bytes = Vec::with_capacity(21);
-                bytes.push(ntw);
-                bytes.extend_from_slice(voter);
-                return bytes;
-            }
-            LookupKey::Network(voter) => {
-                let voter = voter.as_bytes();
-                let mut bytes = Vec::with_capacity(21);
-                bytes.push(2);
-                bytes.extend_from_slice(voter);
-                return bytes;
-            }
-            LookupKey::VoteStarters(ntw) => {
-                let bytes = vec![8, 0, 0, 8, 1, 3, 5, *ntw as u8];
-                return bytes;
-            }
-            LookupKey::ActiveVotes(ntw) => {
-                let bytes = vec![8, 0, 0, 8, 1, 3, 6, *ntw as u8];
-                return bytes;
-            }
-            LookupKey::ConcludedVotes(ntw) => {
-                let bytes = vec![8, 0, 0, 8, 1, 3, 7, *ntw as u8];
-                return bytes;
-            }
-        };
-        let slice = unsafe {
-            let mut key = MaybeUninit::<[u8; 5]>::uninit();
-            let start = key.as_mut_ptr() as *mut u8;
-            (start.add(0) as *mut [u8; 4]).write(fip.to_be_bytes());
-
-            // This is the bit we set to 0 if we only want the token object
-            (start.add(4) as *mut [u8; 1]).write([lookup_type as u8]);
-
-            key.assume_init()
-        };
-        Vec::from(slice)
-    }
-}
-
-#[derive(Serialize)]
-struct VoteResults {
-    yay: u64,
-    nay: u64,
-    abstain: u64,
-    yay_storage_size: u128,
-    nay_storage_size: u128,
-    abstain_storage_size: u128,
+    /// VoteChoice and FIP number to total storage amount
+    Storage(VoteOption, Network, u32),
+    /// The network the address belongs to
+    Network(Address),
 }
 
 impl Redis {
@@ -257,6 +185,9 @@ impl Redis {
 
         current_voters.push(voter);
 
+        current_voters.sort();
+        current_voters.dedup();
+
         let new_bytes = current_voters
             .into_iter()
             .flat_map(|v| v.as_fixed_bytes().to_vec())
@@ -309,6 +240,13 @@ impl Redis {
 
         self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
 
+        Ok(())
+    }
+
+    /// Creates a lookup from the voter to the network they are voting on
+    fn set_network(&mut self, ntw: Network, voter: Address) -> Result<(), RedisError> {
+        let key: Vec<u8> = LookupKey::Network(voter).to_bytes();
+        self.con.set::<Vec<u8>, Network, ()>(key, ntw)?;
         Ok(())
     }
 
@@ -582,6 +520,25 @@ impl Redis {
         Ok(())
     }
 
+    pub fn remove_voter_starters(&mut self, voter: Address, ntw: Network) -> Result<(), RedisError> {
+        let key = LookupKey::VoteStarters(ntw).to_bytes();
+        let mut starters = self.voter_starters(ntw)?;
+
+        if starters.contains(&voter) {
+
+            starters.retain(|&x| x != voter);
+
+            let new_bytes = starters
+                .into_iter()
+                .flat_map(|v| v.as_fixed_bytes().to_vec())
+                .collect::<Vec<u8>>();
+
+            self.con.set::<Vec<u8>, Vec<u8>, ()>(key, new_bytes)?;
+        }
+
+        Ok(())
+    }
+
     pub fn flush_vote(
         &mut self,
         fip_number: impl Into<u32>,
@@ -627,12 +584,6 @@ impl Redis {
         Ok(())
     }
 
-    /// Creates a lookup from the voter to the network they are voting on
-    fn set_network(&mut self, ntw: Network, voter: Address) -> Result<(), RedisError> {
-        let key: Vec<u8> = LookupKey::Network(voter).to_bytes();
-        self.con.set::<Vec<u8>, Network, ()>(key, ntw)?;
-        Ok(())
-    }
 
     /// Removes the lookup from the voter to the network they are voting on
     fn remove_network(&mut self, voter: Address) -> Result<(), RedisError> {
@@ -640,6 +591,78 @@ impl Redis {
         self.con.del::<Vec<u8>, ()>(key)?;
         Ok(())
     }
+}
+
+impl LookupKey {
+    fn to_bytes(&self) -> Vec<u8> {
+        let (lookup_type, fip) = match self {
+            // The first bit will be 0 or 1
+            LookupKey::Votes(fip, ntw) => (*ntw as u8, fip),
+            // The first bit will range between 2 and 8
+            LookupKey::Storage(choice, ntw, fip) => {
+                let choice = match choice {
+                    VoteOption::Yay => 2,
+                    VoteOption::Nay => 3,
+                    VoteOption::Abstain => 4,
+                };
+                let nt = *ntw as u8 + 1; // 1 or 2
+                (choice * nt, fip)
+            }
+            // The first bit will be 9 or 10
+            LookupKey::Timestamp(fip, ntw) => (9 + *ntw as u8, fip),
+            LookupKey::Voter(ntw, voter) => {
+                let ntw = match ntw {
+                    Network::Mainnet => 0,
+                    Network::Testnet => 1,
+                };
+                let voter = voter.as_bytes();
+                let mut bytes = Vec::with_capacity(21);
+                bytes.push(ntw);
+                bytes.extend_from_slice(voter);
+                return bytes;
+            }
+            LookupKey::Network(voter) => {
+                let voter = voter.as_bytes();
+                let mut bytes = Vec::with_capacity(21);
+                bytes.push(2);
+                bytes.extend_from_slice(voter);
+                return bytes;
+            }
+            LookupKey::VoteStarters(ntw) => {
+                let bytes = vec![8, 0, 0, 8, 1, 3, 5, *ntw as u8];
+                return bytes;
+            }
+            LookupKey::ActiveVotes(ntw) => {
+                let bytes = vec![8, 0, 0, 8, 1, 3, 6, *ntw as u8];
+                return bytes;
+            }
+            LookupKey::ConcludedVotes(ntw) => {
+                let bytes = vec![8, 0, 0, 8, 1, 3, 7, *ntw as u8];
+                return bytes;
+            }
+        };
+        let slice = unsafe {
+            let mut key = MaybeUninit::<[u8; 5]>::uninit();
+            let start = key.as_mut_ptr() as *mut u8;
+            (start.add(0) as *mut [u8; 4]).write(fip.to_be_bytes());
+
+            // This is the bit we set to 0 if we only want the token object
+            (start.add(4) as *mut [u8; 1]).write([lookup_type as u8]);
+
+            key.assume_init()
+        };
+        Vec::from(slice)
+    }
+}
+
+#[derive(Serialize)]
+struct VoteResults {
+    yay: u64,
+    nay: u64,
+    abstain: u64,
+    yay_storage_size: u128,
+    nay_storage_size: u128,
+    abstain_storage_size: u128,
 }
 
 #[cfg(test)]

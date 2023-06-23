@@ -5,7 +5,7 @@ use fip_voting::{
     redis::Redis,
     Args,
     get::{get_votes, get_delegates, get_voting_power, get_vote_starters, get_active_votes, get_concluded_votes},
-    post::{register_vote, register_voter, unregister_voter, register_vote_starter}, authorized_voters, storage::Network,
+    post::{register_vote, register_voter, unregister_voter, register_vote_starter, start_vote}, authorized_voters, storage::Network,
 };
 
 
@@ -25,8 +25,13 @@ async fn main() -> std::io::Result<()> {
 
     let ntws = vec![Network::Mainnet, Network::Testnet];
     for ntw in ntws {
+        let voter_starters = redis.voter_starters(ntw).unwrap();
         for voter in authorized_voters() {
-            redis.register_voter_starter(voter, ntw).unwrap();
+            if voter_starters.contains(&voter) {
+                continue;
+            } else {
+                redis.register_voter_starter(voter, ntw).unwrap();
+            }
         }
     }
 
@@ -50,6 +55,7 @@ async fn main() -> std::io::Result<()> {
             .service(register_voter)
             .service(unregister_voter)
             .service(register_vote_starter)
+            .service(start_vote)
     })
     .bind((serve_address.host().unwrap().to_string(), port))?
     .run()
