@@ -1,13 +1,13 @@
 use std::str::FromStr;
 
 use actix_web::{get, web, HttpResponse, Responder};
-use ethers::{types::Address};
+use ethers::types::Address;
 
 use crate::{
     errors::*,
     redis::{Redis, VoteStatus},
     storage::{fetch_storage_amount, Network},
-    NtwFipParams, Args, NtwAddrParams, NtwParams,
+    Args, NtwAddrParams, NtwFipParams, NtwParams,
 };
 
 #[get("/filecoin/vote")]
@@ -116,7 +116,7 @@ async fn get_delegates(
         Network::Testnet => "t",
     };
     for delegate in delegates {
-        dgts.push(format!("{}0{}", prefix, delegate.to_string()));
+        dgts.push(format!("{}0{}", prefix, delegate));
     }
 
     HttpResponse::Ok().json(dgts)
@@ -252,7 +252,10 @@ async fn get_active_votes(
 }
 
 #[get("/filecoin/votehistory")]
-async fn get_concluded_votes(query_params: web::Query<NtwParams>, config: web::Data<Args>) -> impl Responder {
+async fn get_concluded_votes(
+    query_params: web::Query<NtwParams>,
+    config: web::Data<Args>,
+) -> impl Responder {
     println!("Concluded votes requested");
     let ntw = match query_params.network.as_str() {
         "mainnet" => Network::Mainnet,

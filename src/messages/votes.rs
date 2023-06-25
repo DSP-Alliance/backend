@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use ethers::{types::Address, prelude::*};
+use ethers::{prelude::*, types::Address};
 use redis::{from_redis_value, FromRedisValue, ToRedisArgs};
 use serde::Deserialize;
 use thiserror::Error;
@@ -29,7 +29,7 @@ pub struct Vote {
 }
 
 /// Message scheme
-/// 
+///
 /// YAY: FIP-xxx
 #[derive(Deserialize, Default)]
 pub struct ReceivedVote {
@@ -42,10 +42,18 @@ impl ReceivedVote {
         let (choice, fip) = self.msg_details()?;
         let address = self.pub_key()?;
 
-        Ok(Vote { choice, address, fip })
+        Ok(Vote {
+            choice,
+            address,
+            fip,
+        })
     }
     fn msg_details(&self) -> Result<(VoteOption, u32), VoteError> {
-        let msg: Vec<String> = self.message.split_whitespace().map(|s| s.to_string()).collect();
+        let msg: Vec<String> = self
+            .message
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         let (choice, fip_str) = match msg.as_slice() {
             [choice, fip] => (choice, fip),
@@ -69,7 +77,11 @@ impl ReceivedVote {
     }
     fn pub_key(&self) -> Result<Address, VoteError> {
         let signature = Signature::from_str(&self.signature)?;
-        let msg = format!("\x19Ethereum Signed Message:\n{}{}", self.message.len(), self.message);
+        let msg = format!(
+            "\x19Ethereum Signed Message:\n{}{}",
+            self.message.len(),
+            self.message
+        );
         let message_hash = ethers::utils::keccak256(msg);
 
         let address = signature.recover(message_hash)?;
@@ -84,7 +96,7 @@ impl Vote {
     }
 
     pub fn voter(&self) -> Address {
-        self.address.clone()
+        self.address
     }
 }
 
@@ -99,9 +111,9 @@ impl From<u8> for VoteOption {
     }
 }
 
-impl Into<u8> for VoteOption {
-    fn into(self) -> u8 {
-        match self {
+impl From<VoteOption> for u8 {
+    fn from(vote: VoteOption) -> Self {
+        match vote {
             VoteOption::Yay => 0,
             VoteOption::Nay => 1,
             VoteOption::Abstain => 2,
@@ -170,7 +182,7 @@ impl ToRedisArgs for Vote {
     {
         let mut args = Vec::with_capacity(25);
         let choice: u8 = self.choice.clone().into();
-        let fip = self.fip.clone().to_be_bytes().to_vec();
+        let fip = self.fip.to_be_bytes().to_vec();
         let addr = self.address.as_fixed_bytes().to_vec();
 
         args.push(choice);
@@ -192,11 +204,7 @@ impl std::fmt::Display for Vote {
             VoteOption::Nay => "Nay",
             VoteOption::Abstain => "Abstain",
         };
-        write!(
-            f,
-            "{} voted {} on FIP-{}",
-            self.address, vote, self.fip
-        )
+        write!(f, "{} voted {} on FIP-{}", self.address, vote, self.fip)
     }
 }
 
@@ -205,7 +213,6 @@ impl PartialEq for Vote {
         self.address == other.address && self.fip == other.fip
     }
 }
-
 
 pub mod test_votes {
     use super::*;
@@ -338,11 +345,7 @@ mod votes_test {
 
     #[test]
     fn votes_msg_details() {
-        let options = vec![
-            VoteOption::Yay,
-            VoteOption::Nay,
-            VoteOption::Abstain,
-        ];
+        let options = vec![VoteOption::Yay, VoteOption::Nay, VoteOption::Abstain];
         let fip_nums = 1..=5;
         for option in options {
             for num in fip_nums.clone() {
@@ -404,9 +407,7 @@ mod votes_test {
 
     #[tokio::test]
     async fn votes_write_redis_args_vote() {
-        let vote = test_vote(VoteOption::Yay, 1u32)
-            .vote()
-            .unwrap();
+        let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
 
         let mut args = Vec::new();
         vote.write_redis_args(&mut args);
@@ -417,9 +418,7 @@ mod votes_test {
     #[tokio::test]
     async fn votes_from_redis_value_vote() {
         let real_addr = Address::from_str("0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56").unwrap();
-        let vote = test_vote(VoteOption::Yay, 1u32)
-            .vote()
-            .unwrap();
+        let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
 
         let mut args = Vec::new();
         vote.write_redis_args(&mut args);

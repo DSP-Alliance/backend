@@ -3,7 +3,8 @@ use actix_web::{post, web, HttpResponse, Responder};
 use crate::{
     errors::*,
     messages::{
-        auth::VoterAuthorization, vote_registration::ReceivedVoterRegistration, votes::ReceivedVote, vote_start::VoteStart,
+        auth::VoterAuthorization, vote_registration::ReceivedVoterRegistration,
+        vote_start::VoteStart, votes::ReceivedVote,
     },
     redis::{Redis, VoteStatus},
     storage::Network,
@@ -100,7 +101,7 @@ async fn register_vote(
 async fn start_vote(
     body: web::Bytes,
     query_params: web::Query<NtwParams>,
-    config: web::Data<Args>
+    config: web::Data<Args>,
 ) -> impl Responder {
     println!("Vote start received");
 
@@ -255,7 +256,11 @@ async fn register_voter(body: web::Bytes, config: web::Data<Args>) -> impl Respo
     };
 
     // Add the vote to the database
-    match redis.register_voter(registration.address(), registration.ntw(), registration.sp_ids()) {
+    match redis.register_voter(
+        registration.address(),
+        registration.ntw(),
+        registration.sp_ids(),
+    ) {
         Ok(_) => (),
         Err(e) => {
             let res = format!("{}: {}", VOTE_ADD_ERROR, e);
@@ -309,4 +314,3 @@ async fn unregister_voter(body: web::Bytes, config: web::Data<Args>) -> impl Res
 
     HttpResponse::Ok().finish()
 }
-

@@ -1,13 +1,17 @@
-use actix_web::{web, App, HttpServer};
 use actix_cors::Cors;
+use actix_web::{web, App, HttpServer};
 
 use fip_voting::{
+    authorized_voters,
+    get::{
+        get_active_votes, get_concluded_votes, get_delegates, get_vote_starters, get_votes,
+        get_voting_power,
+    },
+    post::{register_vote, register_vote_starter, register_voter, start_vote, unregister_voter},
     redis::Redis,
+    storage::Network,
     Args,
-    get::{get_votes, get_delegates, get_voting_power, get_vote_starters, get_active_votes, get_concluded_votes},
-    post::{register_vote, register_voter, unregister_voter, register_vote_starter, start_vote}, authorized_voters, storage::Network,
 };
-
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -16,10 +20,7 @@ async fn main() -> std::io::Result<()> {
     let serve_address = args.serve_address();
 
     println!("Serving at {}", serve_address);
-    let port = match serve_address.port() {
-        Some(port) => port,
-        None => 80
-    };
+    let port = serve_address.port().unwrap_or(80);
 
     let mut redis = Redis::new(args.redis_path()).unwrap();
 

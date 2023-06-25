@@ -4,7 +4,7 @@ use std::{mem::MaybeUninit, time};
 
 use ethers::types::Address;
 use redis::{Commands, Connection, RedisError};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
@@ -229,7 +229,7 @@ impl Redis {
     }
 
     /// Removes FIP number from list of active votes
-    /// 
+    ///
     /// Note: This function should only be called by "register_concluded_vote"
     fn remove_active_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
         let key = LookupKey::ActiveVotes(ntw).to_bytes();
@@ -240,7 +240,7 @@ impl Redis {
 
         if current_votes.is_empty() {
             self.con.del::<Vec<u8>, ()>(key)?;
-            return Ok(())
+            return Ok(());
         }
 
         self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
@@ -329,7 +329,7 @@ impl Redis {
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
 
         // Check if the FIP number has a timestamp
-        if !self.con.exists(time_key.clone())? {
+        if !self.con.exists(time_key)? {
             return Ok(VoteStatus::DoesNotExist);
         }
 
@@ -343,9 +343,9 @@ impl Redis {
         let vote_length = vote_length.into();
 
         if now - time_start < vote_length {
-            return Ok(VoteStatus::InProgress(time_start + vote_length - now));
+            Ok(VoteStatus::InProgress(time_start + vote_length - now))
         } else {
-            return Ok(VoteStatus::Concluded);
+            Ok(VoteStatus::Concluded)
         }
     }
 
@@ -429,7 +429,7 @@ impl Redis {
     }
 
     /// Fetches all active votes for a given network
-    /// 
+    ///
     /// If `vote_length` is provided, it will remove any concluded votes
     pub fn active_votes(
         &mut self,
@@ -501,7 +501,7 @@ impl Redis {
             return Ok(());
         }
 
-        let key = LookupKey::Votes(num.into(), ntw).to_bytes();
+        let key = LookupKey::Votes(num, ntw).to_bytes();
 
         // If this vote is a duplicate throw an error
         if votes.contains(&vote) {
@@ -523,12 +523,15 @@ impl Redis {
         Ok(())
     }
 
-    pub fn remove_voter_starters(&mut self, voter: Address, ntw: Network) -> Result<(), RedisError> {
+    pub fn remove_voter_starters(
+        &mut self,
+        voter: Address,
+        ntw: Network,
+    ) -> Result<(), RedisError> {
         let key = LookupKey::VoteStarters(ntw).to_bytes();
         let mut starters = self.voter_starters(ntw)?;
 
         if starters.contains(&voter) {
-
             starters.retain(|&x| x != voter);
 
             let new_bytes = starters
@@ -589,7 +592,6 @@ impl Redis {
             .set::<Vec<u8>, Vec<u8>, ()>(key.clone(), storage_bytes)?;
         Ok(())
     }
-
 
     /// Removes the lookup from the voter to the network they are voting on
     fn remove_network(&mut self, voter: Address) -> Result<(), RedisError> {
@@ -653,7 +655,7 @@ impl LookupKey {
             (start.add(0) as *mut [u8; 4]).write(fip.to_be_bytes());
 
             // This is the bit we set to 0 if we only want the token object
-            (start.add(4) as *mut [u8; 1]).write([lookup_type as u8]);
+            (start.add(4) as *mut [u8; 1]).write([lookup_type]);
 
             key.assume_init()
         };
@@ -891,7 +893,9 @@ mod tests {
     async fn redis_storage() {
         let mut redis = redis().await;
 
-        let res = redis.add_storage(6024, Network::Testnet, VoteOption::Yay, 831u32).await;
+        let res = redis
+            .add_storage(6024, Network::Testnet, VoteOption::Yay, 831u32)
+            .await;
 
         assert!(res.is_ok());
 

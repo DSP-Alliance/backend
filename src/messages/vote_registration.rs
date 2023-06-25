@@ -55,10 +55,10 @@ pub struct VoterRegistration {
 
 impl VoterRegistration {
     pub fn address(&self) -> Address {
-        self.authorized_voter.clone()
+        self.authorized_voter
     }
     pub fn ntw(&self) -> Network {
-        self.network.clone()
+        self.network
     }
     pub fn sp_ids(&self) -> Vec<u32> {
         self.sp_ids.clone()
@@ -78,7 +78,11 @@ impl ReceivedVoterRegistration {
             false => return Err(VoteRegistrationError::SignatureMismatch),
         }
 
-        let original = msg_hex.to_ascii_lowercase().iter().map(|b| *b as char).collect::<String>();
+        let original = msg_hex
+            .to_ascii_lowercase()
+            .iter()
+            .map(|b| *b as char)
+            .collect::<String>();
 
         let (addr, sp_ids) = match original
             .split_whitespace()
@@ -99,7 +103,12 @@ impl ReceivedVoterRegistration {
         for sp_id in sp_ids.clone() {
             match verify_id(sp_id.clone(), self.worker_address.clone(), ntw).await? {
                 true => (),
-                false => return Err(VoteRegistrationError::NotStorageProvider(self.worker_address.clone(), sp_id.clone())),
+                false => {
+                    return Err(VoteRegistrationError::NotStorageProvider(
+                        self.worker_address.clone(),
+                        sp_id.clone(),
+                    ))
+                }
             };
             let id = u32::from_str(&sp_id[1..])?;
             new_ids.push(id);
@@ -161,7 +170,7 @@ impl ReceivedVoterRegistration {
 pub mod test_voter_registration {
     use super::ReceivedVoterRegistration;
     pub fn test_reg() -> ReceivedVoterRegistration {
-        ReceivedVoterRegistration { 
+        ReceivedVoterRegistration {
             signature: "0299f5c42a957809d0bd80cb29986b811fbacd1ed84b5995f1d21c6a7063cada725fe0c643bbcdc4082b078d1420fc9e7d08f9c28c9dbf4597183dd92c2fa2ff7727eee2e6f84fb24134051005ea93b3bfe5e294d2e1413bf111440afdadfa0744".to_string(), 
             worker_address: "t3qejyqmrirddrsb2w2thbaco3q6emuljumlhuonp3al35g3kkzx4zpeecycw7gim2meegemwot3gp3qr6alpa".to_string(), 
             message: "2030784632333631443241394130363737653866664431353135643635434635313930654132306542353620743036303234".to_string() 
@@ -171,8 +180,8 @@ pub mod test_voter_registration {
 
 #[cfg(test)]
 mod vote_registration_tests {
-    use super::*;
     use super::test_voter_registration::test_reg;
+    use super::*;
 
     #[test]
     fn vote_registration_sig() {
@@ -197,7 +206,7 @@ mod vote_registration_tests {
     #[tokio::test]
     async fn vote_registration_recover() {
         let reg = test_reg();
-        
+
         let res = reg.recover_vote_registration().await;
 
         println!("{:?}", res);

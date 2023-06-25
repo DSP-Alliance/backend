@@ -1,14 +1,14 @@
 pub mod redis;
 pub mod storage;
 pub mod messages {
-    pub mod vote_registration;
-    pub mod votes;
     pub mod auth;
+    pub mod vote_registration;
     pub mod vote_start;
+    pub mod votes;
 }
-pub mod post;
-pub mod get;
 pub mod errors;
+pub mod get;
+pub mod post;
 
 use std::str::FromStr;
 
@@ -17,7 +17,10 @@ use ethers::types::Address;
 use serde::Deserialize;
 use url::Url;
 
-const STARTING_AUTHORIZED_VOTERS: [&str; 2] = ["0x3B9705F0EF88Ee74B9924e34A5Af578d2E24F300", "0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56"];
+const STARTING_AUTHORIZED_VOTERS: [&str; 2] = [
+    "0x3B9705F0EF88Ee74B9924e34A5Af578d2E24F300",
+    "0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56",
+];
 
 // Default values for command line arguments
 const VOTE_LENGTH: &str = "60";
@@ -33,6 +36,12 @@ pub struct Args {
     pub redis_path: Url,
     #[arg(short, long, default_value = VOTE_LENGTH)]
     pub vote_length: u64,
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Args {
@@ -76,5 +85,8 @@ pub struct NtwParams {
 }
 
 pub fn authorized_voters() -> Vec<Address> {
-    STARTING_AUTHORIZED_VOTERS.iter().map(|s| Address::from_str(s).unwrap()).collect()
+    STARTING_AUTHORIZED_VOTERS
+        .iter()
+        .map(|s| Address::from_str(s).unwrap())
+        .collect()
 }

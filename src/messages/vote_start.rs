@@ -1,10 +1,9 @@
 use std::str::FromStr;
 
-use ethers::{types::{Address, Signature}};
+use ethers::types::{Address, Signature};
 use serde::Deserialize;
 
 use super::votes::VoteError;
-
 
 #[derive(Deserialize, Debug)]
 pub struct VoteStart {
@@ -35,7 +34,11 @@ impl VoteStart {
     }
     fn pub_key(&self) -> Result<Address, VoteError> {
         let signature = Signature::from_str(&self.signature)?;
-        let msg = format!("\x19Ethereum Signed Message:\n{}{}", self.message.len(), self.message);
+        let msg = format!(
+            "\x19Ethereum Signed Message:\n{}{}",
+            self.message.len(),
+            self.message
+        );
         let message_hash = ethers::utils::keccak256(msg);
 
         let address = signature.recover(message_hash)?;

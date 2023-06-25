@@ -1,5 +1,5 @@
 use jsonrpc::Response;
-use redis::{ToRedisArgs, FromRedisValue};
+use redis::{FromRedisValue, ToRedisArgs};
 use reqwest::Client;
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -20,10 +20,14 @@ pub enum StorageFetchError {
     #[error("serde error")]
     Serde(#[from] serde_json::Error),
     #[error("no result")]
-    NoResult
+    NoResult,
 }
 
-pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Result<bool, StorageFetchError> {
+pub async fn verify_id(
+    id: String,
+    worker_address: String,
+    ntw: Network,
+) -> Result<bool, StorageFetchError> {
     let client = Client::new();
 
     let rpc = ntw.rpc();
@@ -54,7 +58,7 @@ pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Resu
             } else {
                 return Ok(false);
             }
-        },
+        }
         None => return Ok(false),
     };
 
@@ -84,7 +88,7 @@ pub async fn verify_id(id: String, worker_address: String, ntw: Network) -> Resu
             } else {
                 Ok(false)
             }
-        },
+        }
         None => Ok(false),
     }
 }
@@ -122,7 +126,7 @@ pub async fn fetch_storage_amount(sp_id: u32, ntw: Network) -> Result<u128, Stor
             } else {
                 Err(StorageFetchError::NoResult)
             }
-        },
+        }
         None => Err(StorageFetchError::NoResult),
     }
 }
@@ -202,5 +206,4 @@ mod tests {
 
         assert!(res);
     }
-
 }
