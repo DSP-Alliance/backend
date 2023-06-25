@@ -516,11 +516,9 @@ impl Redis {
             self.add_storage(sp_id, ntw, vote.choice(), num).await?;
         }
 
-        if ntw == Network::Mainnet {
-            // Add the vote to the list of votes
-            votes.push(vote);
-            self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
-        }
+        // Add the vote to the list of votes
+        votes.push(vote);
+        self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
 
         Ok(())
     }
