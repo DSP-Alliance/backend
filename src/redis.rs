@@ -873,6 +873,8 @@ mod tests {
 
         let res = redis.get_storage(5u32, VoteOption::Yay, Network::Testnet);
 
+        println!("{:?}", res);
+
         assert!(res.is_ok());
     }
 
