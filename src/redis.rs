@@ -890,6 +890,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn redis_storage() {
+        let mut redis = redis().await;
+
+        let res = redis.add_storage(6024, Network::Testnet, VoteOption::Yay, 831u32).await;
+
+        assert!(res.is_ok());
+
+        let res = redis.get_storage(831u32, VoteOption::Yay, Network::Testnet);
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 10240000u128);
+    }
+
+    #[tokio::test]
     async fn redis_vote_start() {
         let mut redis = redis().await;
 

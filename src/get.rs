@@ -58,6 +58,7 @@ async fn get_votes(
                     return HttpResponse::InternalServerError().body(res);
                 }
             };
+            println!("Vote results: {:?}", vote_results);
             HttpResponse::Ok().json(vote_results)
         }
         VoteStatus::DoesNotExist => HttpResponse::NotFound().finish(),
