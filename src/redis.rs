@@ -4,7 +4,7 @@ use std::{mem::MaybeUninit, time};
 
 use ethers::types::Address;
 use redis::{Commands, Connection, RedisError};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use url::Url;
 
 use crate::{
@@ -663,7 +663,7 @@ impl LookupKey {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct VoteResults {
     yay: u64,
     nay: u64,
@@ -978,6 +978,15 @@ mod tests {
             Ok(_) => {}
             Err(e) => panic!("Error: {}", e),
         }
+
+        let res = redis.vote_results(2u32, Network::Testnet);
+
+        assert!(res.is_ok());
+
+        let results: VoteResults = serde_json::from_str(&res.unwrap()).unwrap();
+
+        assert_eq!(results.yay, 1);
+        assert_eq!(results.yay_storage_size, 10240000u128);
     }
 
     #[tokio::test]

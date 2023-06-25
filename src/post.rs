@@ -18,7 +18,7 @@ async fn register_vote(
 ) -> impl Responder {
     let num = query_params.fip_number;
 
-    println!("Vote received for FIP: {}", num);
+    println!("Vote received for FIP: {}, {:?}", num, body);
     // Deserialize the body into the vote struct
     let vote: ReceivedVote = match serde_json::from_slice(&body) {
         Ok(v) => v,
