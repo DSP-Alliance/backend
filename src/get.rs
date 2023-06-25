@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use actix_web::{get, web, HttpResponse, Responder};
-use ethers::types::Address;
+use ethers::{types::Address};
 
 use crate::{
     errors::*,
@@ -283,4 +283,60 @@ async fn get_concluded_votes(query_params: web::Query<NtwParams>, config: web::D
     println!("Concluded votes: {:?}", concluded_votes);
 
     HttpResponse::Ok().json(concluded_votes)
+}
+
+#[get("/filecoin/storage")]
+async fn get_storage(
+    query_params: web::Query<NtwAddrParams>,
+    config: web::Data<Args>,
+) -> impl Responder {
+    println!("Storage requested");
+    let address = query_params.address.clone();
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    let address = match Address::from_str(address.as_str()) {
+        Ok(address) => address,
+        Err(e) => {
+            let res = format!("{}: {}", INVALID_ADDRESS, e);
+            println!("{}", res);
+            return HttpResponse::BadRequest().body(res);
+        }
+    };
+
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    let sp_ids = match redis.voter_delegates(address, ntw) {
+        Ok(sp_ids) => sp_ids,
+        Err(e) => {
+            let res = format!("{}: {}", VOTER_DELEGATES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    let mut storage = 0u128;
+    for sp_id in sp_ids {
+        let amount = match fetch_storage_amount(sp_id, ntw).await {
+            Ok(amount) => amount,
+            Err(e) => {
+                let res = format!("{}: {}", STORAGE_ERROR, e);
+                println!("{}", res);
+                return HttpResponse::InternalServerError().body(res);
+            }
+        };
+        storage += amount;
+    }
+
+    HttpResponse::Ok().body(storage.to_string())
 }

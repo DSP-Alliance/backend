@@ -19,6 +19,8 @@ pub const VOTE_STARTERS_ERROR: &str = "Error getting vote starters";
 
 pub const VOTING_POWER_ERROR: &str = "Error getting voting power";
 
+pub const STORAGE_ERROR: &str = "Error getting storage";
+
 pub const ACTIVE_VOTES_ERROR: &str = "Error getting active votes";
 pub const CONCLUDED_VOTES_ERROR: &str = "Error getting concluded votes";
 
