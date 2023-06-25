@@ -871,7 +871,7 @@ mod tests {
     async fn redis_get_storage() {
         let mut redis = redis().await;
 
-        let res = redis.get_storage(5u32, VoteOption::Yay, Network::Testnet);
+        let res = redis.get_storage(49u32, VoteOption::Yay, Network::Testnet);
 
         println!("{:?}", res);
 
