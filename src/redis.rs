@@ -509,12 +509,6 @@ impl Redis {
         // Check if a vote has been started for this FIP number
         let mut votes = self.votes(num, ntw)?;
 
-        // If no votes exist, create a new vote
-        if votes.is_empty() {
-            self.new_vote(num, vote, voter, ntw).await?;
-            return Ok(());
-        }
-
         let key = LookupKey::Votes(num, ntw).to_bytes();
 
         // If this vote is a duplicate throw an error
