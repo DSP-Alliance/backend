@@ -163,7 +163,7 @@ async fn get_voting_power(
     };
 
     let mut voting_power = 0;
-    if STARTING_AUTHORIZED_VOTERS.contains(&address.to_string().as_str()) {
+    if STARTING_AUTHORIZED_VOTERS.map(|s| Address::from_str(s).unwrap()).contains(&address) {
         voting_power += 10240000;
     }
     for delegate in authorized.iter() {
