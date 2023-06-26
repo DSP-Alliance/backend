@@ -78,6 +78,8 @@ impl Redis {
             )));
         }
 
+        self.register_vote_to_all_votes(num, ntw)?;
+
         // Set a map of FIP to timestamp of vote start
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
         let timestamp = time::SystemTime::now()
@@ -86,8 +88,6 @@ impl Redis {
             .as_secs();
         // After this is set then the vote is considered started 
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
-
-        self.register_vote_to_all_votes(num, ntw)?;
 
         Ok(())
     }
