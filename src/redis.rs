@@ -75,7 +75,7 @@ impl Redis {
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
 
         // Check if vote already exists
-        if !self.con.exists(time_key.clone())? {
+        if self.con.exists(time_key.clone())? {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Vote already exists",
@@ -89,11 +89,7 @@ impl Redis {
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
 
-        println!("Vote started for FIP: {}", num);
-
         self.register_active_vote(ntw, num)?;
-
-        println!("Registered active vote for FIP: {}", num);
 
         Ok(())
     }
@@ -746,6 +742,28 @@ mod tests {
             let status = res.unwrap();
 
             assert_eq!(status, VoteStatus::InProgress(60u64));
+
+            let res = redis.active_votes(ntw, None);
+            assert!(res.is_ok());
+
+            let active_votes = res.unwrap();
+            assert!(active_votes.contains(&5u32));
+        }
+    }
+
+    #[tokio::test]
+    async fn redis_register_active_vote() {
+        let mut redis = redis().await;
+
+        for ntw in networks() {
+
+            let res = redis.active_votes(ntw, None);
+
+            assert!(res.is_ok());
+
+            let res = redis.register_active_vote(ntw, 5u32);
+
+            assert!(res.is_ok());
 
             let res = redis.active_votes(ntw, None);
             assert!(res.is_ok());
