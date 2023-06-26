@@ -74,6 +74,14 @@ impl Redis {
 
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
 
+        // Check if vote already exists
+        if !self.con.exists(time_key.clone())? {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Vote already exists",
+            )));
+        }
+
         // Set a map of FIP to timestamp of vote start
         let timestamp = time::SystemTime::now()
             .duration_since(time::UNIX_EPOCH)
@@ -81,7 +89,11 @@ impl Redis {
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
 
+        println!("Vote started for FIP: {}", num);
+
         self.register_active_vote(ntw, num)?;
+
+        println!("Registered active vote for FIP: {}", num);
 
         Ok(())
     }
