@@ -94,64 +94,6 @@ impl Redis {
         Ok(())
     }
 
-    /// Creates a new vote in the database
-    ///
-    /// * Voter must be registered before hand
-    /// * Creates a new vector of voters from FIP number
-    /// * Sets the timestamp of the vote start as now
-    /// * For every storage provider the voter is authorized for, add their power to the vote choice
-    async fn new_vote(
-        &mut self,
-        fip_number: impl Into<u32>,
-        vote: Vote,
-        voter: Address,
-        ntw: Network,
-    ) -> Result<(), RedisError> {
-        let num = fip_number.into();
-
-        if !self.is_authorized_starter(voter, ntw)? && !authorized_voters().contains(&voter) {
-            return Err(RedisError::from((
-                redis::ErrorKind::TypeError,
-                "Voter is not authorized to start a vote",
-            )));
-        }
-
-        // Fetch the storage provider Id's that the voter is authorized for
-        let authorized = self.voter_delegates(voter, ntw)?;
-
-        if authorized.is_empty() {
-            return Err(RedisError::from((
-                redis::ErrorKind::TypeError,
-                "Voter is not authorized for any storage providers",
-            )));
-        }
-
-        let vote_key = LookupKey::Votes(num, ntw).to_bytes();
-        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
-
-        let choice = vote.choice();
-
-        // Set a map of FIP number to vector of all votes
-        self.con
-            .set::<Vec<u8>, Vec<Vote>, ()>(vote_key, vec![vote])?;
-
-        // Set a map of FIP to timestamp of vote start
-        let timestamp = time::SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
-
-        self.register_active_vote(ntw, num)?;
-
-        // Add the storage providers power to their vote choice for the respective FIP
-        for sp_id in authorized {
-            self.add_storage(sp_id, ntw, choice.clone(), num).await?;
-        }
-
-        Ok(())
-    }
-
     /// Registers a voter in the database
     ///
     /// * Creates a lookup from voters address to their respective network
@@ -495,6 +437,16 @@ impl Redis {
 
         let ntw = self.network(voter)?;
 
+        let active = self.active_votes(ntw, None)?;
+
+        // If the vote is not active, throw an error
+        if !active.contains(&num) {
+            return Err(RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Vote is not active",
+            )));
+        }
+
         // Fetch the storage provider Id's that the voter is authorized for
         let authorized = self.voter_delegates(voter, ntw)?;
 
@@ -506,10 +458,9 @@ impl Redis {
             )));
         }
 
-        // Check if a vote has been started for this FIP number
-        let mut votes = self.votes(num, ntw)?;
-
         let key = LookupKey::Votes(num, ntw).to_bytes();
+
+        let mut votes = self.votes(num, ntw)?;
 
         // If this vote is a duplicate throw an error
         if votes.contains(&vote) {
