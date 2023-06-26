@@ -27,5 +27,7 @@ pub const ACTIVE_VOTES_ERROR: &str = "Error getting active votes";
 pub const VOTE_IS_ALREADY_STARTED: &str = "Vote is already started";
 pub const CONCLUDED_VOTES_ERROR: &str = "Error getting concluded votes";
 
+pub const VOTER_NOT_REGISTERED_NETWORK: &str = "Voter is not registered for this network";
+
 pub const INVALID_NETWORK: &str = "Voter is not registered for this network";
 pub const INVALID_ADDRESS: &str = "Invalid address";

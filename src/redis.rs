@@ -56,7 +56,7 @@ impl Redis {
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
     /// Starts a new vote in the database but does not add any votes into the database
-    pub async fn start_vote(
+    pub fn start_vote(
         &mut self,
         fip_number: impl Into<u32>,
         signer: Address,
@@ -277,18 +277,20 @@ impl Redis {
             return Ok(VoteStatus::DoesNotExist);
         }
 
-        // Check if the vote is still open
-        let time_start: u64 = self.vote_start(num, ntw)?;
-        let now = time::SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
         let vote_length = vote_length.into();
 
-        if now - time_start < vote_length {
-            Ok(VoteStatus::InProgress(time_start + vote_length - now))
-        } else {
+        let active_votes = self.active_votes(ntw, Some(vote_length))?;
+
+        if active_votes.contains(&num) {
+            let timestamp: u64 = self.vote_start(num, ntw)?;
+
+            let now = time::SystemTime::now()
+                .duration_since(time::UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs();
+
+            Ok(VoteStatus::InProgress(vote_length - (now - timestamp)))
+        } else  {
             Ok(VoteStatus::Concluded)
         }
     }
@@ -399,11 +401,20 @@ impl Redis {
         if let Some(vote_length) = vote_length {
             let mut active = Vec::new();
             for fip in fips {
-                let status = self.vote_status(fip, vote_length, ntw)?;
-                if let VoteStatus::Concluded = status {
-                    self.register_concluded_vote(ntw, fip)?;
-                } else {
+
+                // Check if the vote is still open
+                let time_start: u64 = self.vote_start(fip, ntw)?;
+                let now = time::SystemTime::now()
+                    .duration_since(time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                let vote_length = vote_length.into();
+
+                if now - time_start < vote_length {
                     active.push(fip);
+                } else {
+                    self.register_concluded_vote(ntw, fip)?;
                 }
             }
             return Ok(active);
@@ -682,7 +693,7 @@ mod tests {
         let starter = voter();
 
         for ntw in networks() {
-            let res = redis.start_vote(5u32, starter, ntw).await;
+            let res = redis.start_vote(5u32, starter, ntw);
 
             assert!(res.is_ok());
 
@@ -902,6 +913,8 @@ mod tests {
         let mut redis = redis().await;
 
         let vote = test_vote(VoteOption::Yay, 4u32).vote().unwrap();
+
+        redis.start_vote(4u32, vote_starter(), Network::Testnet).unwrap();
         let res = redis.add_vote(4u32, vote, voter()).await;
         println!("{:?}", res);
         assert!(res.is_ok());
@@ -920,6 +933,7 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, 3u32).vote().unwrap();
 
+        redis.start_vote(3u32, vote_starter(), Network::Testnet).unwrap();
         let res = redis.add_vote(3u32, vote, voter()).await;
         assert!(res.is_ok());
 
@@ -966,6 +980,8 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, 2u32).vote().unwrap();
 
+        redis.start_vote(2u32, vote_starter(), Network::Testnet).unwrap();
+
         let res = redis.add_vote(2u32, vote, voter()).await;
 
         match res {
@@ -987,6 +1003,9 @@ mod tests {
     async fn redis_vote_results() {
         let mut redis = redis().await;
         let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
+
+
+        redis.start_vote(1u32, vote_starter(), Network::Testnet).unwrap();
 
         let res = redis.add_vote(1u32, vote, voter()).await;
         println!("{:?}", res);

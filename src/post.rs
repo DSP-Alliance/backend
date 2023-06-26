@@ -55,7 +55,7 @@ async fn register_vote(
     let ntw = match redis.network(voter) {
         Ok(ntw) => ntw,
         Err(e) => {
-            let res = format!("{}: {}", INVALID_NETWORK, e);
+            let res = format!("{}: {}", VOTER_NOT_REGISTERED_NETWORK, e);
             println!("{}", res);
             return HttpResponse::InternalServerError().body(res);
         }
@@ -146,10 +146,10 @@ async fn start_vote(
         }
     };
 
-    match redis.active_votes(ntw, None) {
+    match redis.active_votes(ntw, Some(config.vote_length())) {
         Ok(votes) => {
             if votes.contains(&fip) {
-                let res = format!("{}: {}", ACTIVE_VOTES_ERROR, fip);
+                let res = format!("{}: {}", VOTE_IS_ALREADY_STARTED, fip);
                 println!("{}", res);
                 return HttpResponse::Forbidden().body(res);
             }
@@ -161,7 +161,7 @@ async fn start_vote(
         }
     }
 
-    match redis.start_vote(fip, starter, ntw).await {
+    match redis.start_vote(fip, starter, ntw) {
         Ok(_) => (),
         Err(e) => {
             let res = format!("{}: {}", VOTE_START_ERROR, e);
