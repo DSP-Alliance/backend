@@ -44,6 +44,15 @@ async fn get_votes(
         }
     };
 
+    match redis.active_votes(ntw, Some(config.vote_length())) {
+        Ok(_) => (),
+        Err(e) => {
+            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    }
+
     println!("Vote status: {:?} for FIP: {}", status, num);
 
     // Return the appropriate response
