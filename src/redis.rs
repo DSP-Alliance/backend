@@ -284,7 +284,7 @@ impl Redis {
         &mut self,
         fip_number: impl Into<u32>,
         ntw: Network,
-    ) -> Result<String, RedisError> {
+    ) -> Result<VoteResults, RedisError> {
         let mut yay = 0;
         let mut nay = 0;
         let mut abstain = 0;
@@ -310,13 +310,7 @@ impl Redis {
             abstain_storage_size: self.get_storage(num, VoteOption::Abstain, ntw)?,
         };
 
-        match serde_json::to_string(&results) {
-            Ok(j) => Ok(j),
-            Err(_) => Err(RedisError::from((
-                redis::ErrorKind::TypeError,
-                "Error serializing vote results",
-            ))),
-        }
+        Ok(results)
     }
 
     pub fn vote_status(
@@ -663,8 +657,8 @@ impl LookupKey {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct VoteResults {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct VoteResults {
     yay: u64,
     nay: u64,
     abstain: u64,
@@ -985,7 +979,7 @@ mod tests {
 
         assert!(res.is_ok());
 
-        let results: VoteResults = serde_json::from_str(&res.unwrap()).unwrap();
+        let results: VoteResults = res.unwrap();
 
         assert_eq!(results.yay, 1);
         assert_eq!(results.yay_storage_size, 10240000u128);

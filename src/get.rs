@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, collections::HashMap};
 
 use actix_web::{get, web, HttpResponse, Responder};
 use ethers::types::Address;
@@ -342,4 +342,55 @@ async fn get_storage(
     }
 
     HttpResponse::Ok().body(storage.to_string())
+}
+
+#[get("/filecoin/allconcludedvotes")]
+async fn get_all_concluded_votes(
+    query_params: web::Query<NtwParams>,
+    config: web::Data<Args>,
+) -> impl Responder {
+    println!("All concluded votes requested");
+
+    let ntw = match query_params.network.as_str() {
+        "mainnet" => Network::Mainnet,
+        "calibration" => Network::Testnet,
+        _ => return HttpResponse::BadRequest().body(INVALID_NETWORK),
+    };
+
+    // Open a connection to the Redis Database
+    let mut redis = match Redis::new(config.redis_path()) {
+        Ok(redis) => redis,
+        Err(e) => {
+            let res = format!("{}: {}", OPEN_CONNECTION_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    // Get concluded votes
+    let concluded_votes = match redis.concluded_votes(ntw) {
+        Ok(concluded_votes) => concluded_votes,
+        Err(e) => {
+            let res = format!("{}: {}", CONCLUDED_VOTES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+
+    let mut vote_res_map = HashMap::new();
+    for vote in concluded_votes.into_iter() {
+        let results = match redis.vote_results(vote, ntw) {
+            Ok(results) => results,
+            Err(e) => {
+                let res = format!("{}: {}", VOTE_RESULTS_ERROR, e);
+                println!("{}", res);
+                return HttpResponse::InternalServerError().body(res);
+            }
+        };
+        vote_res_map.insert(vote, results);
+    }
+
+    println!("Concluded votes: {:?}", vote_res_map);
+
+    HttpResponse::Ok().json(vote_res_map)
 }
