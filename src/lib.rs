@@ -20,6 +20,7 @@ use url::Url;
 const STARTING_AUTHORIZED_VOTERS: [&str; 2] = [
     "0x3B9705F0EF88Ee74B9924e34A5Af578d2E24F300",
     "0xf2361d2a9a0677e8ffd1515d65cf5190ea20eb56",
+    "0x47f033Ed0F9485677008dC30507273607A74E92C"
 ];
 
 // Default values for command line arguments
