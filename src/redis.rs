@@ -420,7 +420,13 @@ impl Redis {
 
     fn votes(&mut self, fip_number: impl Into<u32>, ntw: Network) -> Result<Vec<Vote>, RedisError> {
         let key = LookupKey::Votes(fip_number.into(), ntw).to_bytes();
-        let votes: Vec<Vote> = self.con.get::<Vec<u8>, Vec<Vote>>(key)?;
+        let votes: Vec<Vote> = match self.con.get::<Vec<u8>, Vec<Vote>>(key) {
+            Ok(v) => v,
+            Err(e) => match e.kind() {
+                redis::ErrorKind::TypeError => Vec::new(),
+                _ => return Err(e),
+            },
+        };
         Ok(votes)
     }
 
