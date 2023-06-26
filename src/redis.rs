@@ -209,6 +209,12 @@ impl Redis {
     /                                     GETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
+    fn vote_exists(&mut self, ntw: Network, fip: u32) -> Result<bool, RedisError> {
+        let key = LookupKey::Timestamp(fip, ntw).to_bytes();
+
+        Ok(self.con.exists(key)?)
+    }
+
     pub fn is_authorized_starter(
         &mut self,
         voter: Address,
@@ -409,8 +415,6 @@ impl Redis {
                     .unwrap()
                     .as_secs();
 
-                let vote_length = vote_length.into();
-
                 if now - time_start < vote_length {
                     active.push(fip);
                 } else {
@@ -490,6 +494,14 @@ impl Redis {
         votes.push(vote);
         self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
 
+        Ok(())
+    }
+
+    fn verify_vote_activity(
+        &mut self,
+        fip_number: impl Into<u32>,
+        ntw: Network,
+    ) -> Result<(), RedisError> {
         Ok(())
     }
 
