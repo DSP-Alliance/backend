@@ -125,6 +125,8 @@ async fn start_vote(
         }
     };
 
+    println!("Vote start received for FIP: {}", start.message);
+
     // Open a connection to the redis database
     let mut redis = match Redis::new(config.redis_path()) {
         Ok(redis) => redis,

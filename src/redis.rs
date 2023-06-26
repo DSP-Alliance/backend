@@ -720,7 +720,7 @@ mod tests {
     async fn redis_start_vote() {
         let mut redis = redis().await;
 
-        let starter = vote_starter();
+        let starter = voter();
 
         for ntw in networks() {
             let res = redis.start_vote(5u32, starter, ntw).await;
@@ -733,7 +733,13 @@ mod tests {
 
             let status = res.unwrap();
 
-            assert_eq!(status, VoteStatus::InProgress(60u64))
+            assert_eq!(status, VoteStatus::InProgress(60u64));
+
+            let res = redis.active_votes(ntw, None);
+            assert!(res.is_ok());
+
+            let active_votes = res.unwrap();
+            assert!(active_votes.contains(&5u32));
         }
     }
 
@@ -827,6 +833,11 @@ mod tests {
         let mut redis = redis().await;
 
         for ntw in networks() {
+            let res = redis.active_votes(ntw, None);
+
+            assert!(res.is_ok());
+            assert!(res.unwrap().is_empty());
+
             let res = redis.register_active_vote(ntw, 87);
 
             assert!(res.is_ok());

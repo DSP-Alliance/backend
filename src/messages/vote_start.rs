@@ -8,7 +8,7 @@ use super::votes::VoteError;
 #[derive(Deserialize, Debug)]
 pub struct VoteStart {
     signature: String,
-    message: String,
+    pub message: String,
 }
 
 impl VoteStart {
