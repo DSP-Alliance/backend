@@ -70,8 +70,6 @@ impl Redis {
             )));
         }
 
-        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
-
         // Check if vote already exists
         if self.vote_exists(ntw, num)? {
             return Err(RedisError::from((
@@ -81,10 +79,12 @@ impl Redis {
         }
 
         // Set a map of FIP to timestamp of vote start
+        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
         let timestamp = time::SystemTime::now()
             .duration_since(time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
+        // After this is set then the vote is considered started 
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
 
         self.register_vote_to_all_votes(num, ntw)?;
@@ -576,7 +576,7 @@ impl LookupKey {
                 return bytes;
             }
             LookupKey::AllVotes(ntw) => {
-                let bytes = vec![8, 0, 0, 8, 1, 3, 6, *ntw as u8];
+                let bytes = vec![8, 0, 0, 8, 1, 3, 187, *ntw as u8];
                 return bytes;
             }
         };
@@ -917,6 +917,41 @@ mod tests {
 
         assert_eq!(results.yay, 1);
         assert_eq!(results.yay_storage_size, 10240000u128);
+    }
+
+    #[tokio::test]
+    async fn redis_vote_exists() {
+        let mut redis = redis().await;
+
+        let res = redis.vote_exists(Network::Testnet, 129u32);
+
+        assert!(res.is_ok());
+        assert!(!res.unwrap());
+
+        redis.start_vote(129u32, vote_starter(), Network::Testnet).unwrap();
+
+        let res = redis.vote_exists(Network::Testnet, 129u32);
+
+        assert!(res.is_ok());
+        assert!(res.unwrap());
+    }
+
+    #[tokio::test]
+    async fn redis_register_to_all_votes() {
+        let mut redis = redis().await;
+
+        let res = redis.all_votes(Network::Testnet).unwrap();
+
+        assert!(res.is_empty());
+
+        redis.register_vote_to_all_votes(87u32, Network::Testnet).unwrap();
+
+        let res = redis.all_votes(Network::Testnet).unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0], 87u32);
+
+        redis.register_vote_to_all_votes(87u32, Network::Testnet).unwrap();
     }
 
     #[tokio::test]

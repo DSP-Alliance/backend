@@ -148,9 +148,9 @@ async fn start_vote(
 
     match redis.vote_exists(ntw, fip) {
         Ok(true) => {
-            let res = format!("{}: {}", VOTE_EXISTS_ERROR, fip);
+            let res = format!("{}: {}", VOTE_ALREADY_EXISTS, fip);
             println!("{}", res);
-            return HttpResponse::Forbidden().body(res);
+            return HttpResponse::Ok().body(res);
         }
         Ok(false) => (),
         Err(e) => {
