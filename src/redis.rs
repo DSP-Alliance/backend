@@ -857,6 +857,7 @@ mod tests {
         let mut redis = redis().await;
 
         for ntw in networks() {
+
             let res = redis.register_concluded_vote(ntw, 89);
 
             assert!(res.is_ok());
@@ -868,6 +869,37 @@ mod tests {
             let votes = res.unwrap();
             assert!(votes.contains(&89));
         }
+    }
+
+    #[tokio::test]
+    async fn redis_test_vote() {
+        let mut redis = redis().await;
+
+        let fip = 5u32;
+        let vote_length = 1u64;
+        let ntw = Network::Testnet;
+
+        redis.start_vote(fip, vote_starter(), ntw).unwrap();
+
+        let active = redis.active_votes(ntw, None).unwrap();
+        println!("{:?}", active);
+
+        assert!(active.contains(&fip));
+
+        let vote = test_vote(VoteOption::Yay, fip).vote().unwrap();
+
+        redis.add_vote(fip, vote, voter()).await.unwrap();
+
+        // wait 1 second
+        tokio::time::sleep(time::Duration::from_secs(vote_length + 1)).await;
+
+        let active = redis.active_votes(ntw, Some(vote_length)).unwrap();
+
+        assert!(!active.contains(&fip));
+
+        let concluded = redis.concluded_votes(ntw).unwrap();
+
+        assert!(concluded.contains(&fip));
     }
 
     #[tokio::test]
