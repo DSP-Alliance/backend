@@ -432,7 +432,13 @@ impl Redis {
     ) -> Result<Vec<u32>, RedisError> {
         let key = LookupKey::ActiveVotes(ntw).to_bytes();
 
-        let fips: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
+        let fips: Vec<u32> = match self.con.get::<Vec<u8>, Vec<u32>>(key) {
+            Ok(f) => f,
+            Err(e) => match e.kind() {
+                redis::ErrorKind::TypeError => Vec::new(),
+                _ => return Err(e),
+            },
+        };
 
         if let Some(vote_length) = vote_length {
             let mut active = Vec::new();
