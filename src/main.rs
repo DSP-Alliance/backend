@@ -5,7 +5,7 @@ use fip_voting::{
     authorized_voters,
     get::{
         get_active_votes, get_concluded_votes, get_delegates, get_vote_starters, get_votes,
-        get_voting_power, get_storage, get_all_concluded_votes,
+        get_voting_power, get_all_concluded_votes,
     },
     post::{register_vote, register_vote_starter, register_voter, start_vote, unregister_voter},
     redis::Redis,
@@ -52,7 +52,6 @@ async fn main() -> std::io::Result<()> {
             .service(get_delegates)
             .service(get_concluded_votes)
             .service(get_active_votes)
-            .service(get_storage)
             .service(get_all_concluded_votes)
             .service(register_vote)
             .service(register_voter)
