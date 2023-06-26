@@ -163,11 +163,11 @@ async fn get_voting_power(
     };
 
     let mut voting_power = 0;
-    for delegate in authorized {
-        if delegate == 6024 {
+    for delegate in authorized.iter() {
+        if *delegate == 6024 {
             voting_power += 10240000;
         }
-        match fetch_storage_amount(delegate, ntw).await {
+        match fetch_storage_amount(*delegate, ntw).await {
             Ok(amount) => voting_power += amount,
             Err(e) => {
                 let res = format!("{}: {}", VOTING_POWER_ERROR, e);
@@ -176,6 +176,8 @@ async fn get_voting_power(
             }
         }
     }
+
+    println!("Voting power: {} for address: {} and delegates {:?}", voting_power, address, authorized);
 
     HttpResponse::Ok().body(voting_power.to_string())
 }
