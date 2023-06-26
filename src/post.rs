@@ -83,7 +83,7 @@ async fn register_vote(
     let choice = vote.choice();
 
     // Add the vote to the database
-    match redis.add_vote(num, vote, voter).await {
+    match redis.add_vote(num, vote, voter, config.vote_length()).await {
         Ok(_) => (),
         Err(e) => {
             let res = format!("{}: {}", VOTE_ADD_ERROR, e);
@@ -146,16 +146,15 @@ async fn start_vote(
         }
     };
 
-    match redis.active_votes(ntw, Some(config.vote_length())) {
-        Ok(votes) => {
-            if votes.contains(&fip) {
-                let res = format!("{}: {}", VOTE_IS_ALREADY_STARTED, fip);
-                println!("{}", res);
-                return HttpResponse::Forbidden().body(res);
-            }
+    match redis.vote_exists(ntw, fip) {
+        Ok(true) => {
+            let res = format!("{}: {}", VOTE_EXISTS_ERROR, fip);
+            println!("{}", res);
+            return HttpResponse::Forbidden().body(res);
         }
+        Ok(false) => (),
         Err(e) => {
-            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
+            let res = format!("{}: {}", VOTE_EXISTS_ERROR, e);
             println!("{}", res);
             return HttpResponse::InternalServerError().body(res);
         }

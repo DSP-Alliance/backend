@@ -44,15 +44,6 @@ async fn get_votes(
         }
     };
 
-    match redis.active_votes(ntw, Some(config.vote_length())) {
-        Ok(_) => (),
-        Err(e) => {
-            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::InternalServerError().body(res);
-        }
-    }
-
     println!("Vote status: {:?} for FIP: {}", status, num);
 
     // Return the appropriate response
@@ -154,7 +145,7 @@ async fn get_active_votes(
     };
 
     // Get active votes
-    let active_votes = match redis.active_votes(ntw, Some(config.vote_length())) {
+    let active_votes = match redis.active_votes(ntw, config.vote_length()) {
         Ok(active_votes) => active_votes,
         Err(e) => {
             let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
@@ -190,17 +181,8 @@ async fn get_concluded_votes(
         }
     };
 
-    match redis.active_votes(ntw, Some(config.vote_length())) {
-        Ok(_) => (),
-        Err(e) => {
-            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::InternalServerError().body(res);
-        }
-    };
-
     // Get concluded votes
-    let concluded_votes = match redis.concluded_votes(ntw) {
+    let concluded_votes = match redis.concluded_votes(ntw, config.vote_length()) {
         Ok(concluded_votes) => concluded_votes,
         Err(e) => {
             let res = format!("{}: {}", CONCLUDED_VOTES_ERROR, e);
@@ -237,17 +219,8 @@ async fn get_all_concluded_votes(
         }
     };
 
-    match redis.active_votes(ntw, Some(config.vote_length())) {
-        Ok(_) => (),
-        Err(e) => {
-            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
-            println!("{}", res);
-            return HttpResponse::InternalServerError().body(res);
-        }
-    };
-
     // Get concluded votes
-    let concluded_votes = match redis.concluded_votes(ntw) {
+    let concluded_votes = match redis.concluded_votes(ntw, config.vote_length()) {
         Ok(concluded_votes) => concluded_votes,
         Err(e) => {
             let res = format!("{}: {}", CONCLUDED_VOTES_ERROR, e);

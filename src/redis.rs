@@ -33,10 +33,8 @@ enum LookupKey {
     Voter(Network, Address),
     /// The voter authorized to start a vote on that network
     VoteStarters(Network),
-    /// Votes in progress on the network
-    ActiveVotes(Network),
-    /// Concluded votes on the network
-    ConcludedVotes(Network),
+    /// All FIP votes on the network, 
+    AllVotes(Network),
     /// VoteChoice and FIP number to total storage amount
     Storage(VoteOption, Network, u32),
     /// The network the address belongs to
@@ -75,7 +73,7 @@ impl Redis {
         let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
 
         // Check if vote already exists
-        if self.con.exists(time_key.clone())? {
+        if self.vote_exists(ntw, num)? {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Vote already exists",
@@ -89,7 +87,7 @@ impl Redis {
             .as_secs();
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
 
-        self.register_active_vote(ntw, num)?;
+        self.register_vote_to_all_votes(num, ntw)?;
 
         Ok(())
     }
@@ -148,56 +146,6 @@ impl Redis {
         Ok(())
     }
 
-    /// Adds FIP number to list of active votes
-    fn register_active_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
-        let key = LookupKey::ActiveVotes(ntw).to_bytes();
-
-        let mut current_votes = self.active_votes(ntw, None)?;
-
-        current_votes.push(fip);
-
-        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
-
-        Ok(())
-    }
-
-    /// Adds FIP number to list of concluded votes
-    ///
-    /// * Removes the FIP number from the list of active votes
-    fn register_concluded_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
-        let key = LookupKey::ConcludedVotes(ntw).to_bytes();
-
-        self.remove_active_vote(ntw, fip)?;
-
-        let mut current_votes = self.concluded_votes(ntw)?;
-
-        current_votes.push(fip);
-
-        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
-
-        Ok(())
-    }
-
-    /// Removes FIP number from list of active votes
-    ///
-    /// Note: This function should only be called by "register_concluded_vote"
-    fn remove_active_vote(&mut self, ntw: Network, fip: u32) -> Result<(), RedisError> {
-        let key = LookupKey::ActiveVotes(ntw).to_bytes();
-
-        let mut current_votes = self.active_votes(ntw, None)?;
-
-        current_votes.retain(|&x| x != fip);
-
-        if current_votes.is_empty() {
-            self.con.del::<Vec<u8>, ()>(key)?;
-            return Ok(());
-        }
-
-        self.con.set::<Vec<u8>, Vec<u32>, ()>(key, current_votes)?;
-
-        Ok(())
-    }
-
     /// Creates a lookup from the voter to the network they are voting on
     fn set_network(&mut self, ntw: Network, voter: Address) -> Result<(), RedisError> {
         let key: Vec<u8> = LookupKey::Network(voter).to_bytes();
@@ -209,7 +157,7 @@ impl Redis {
     /                                     GETTERS                                    /
     /~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    fn vote_exists(&mut self, ntw: Network, fip: u32) -> Result<bool, RedisError> {
+    pub fn vote_exists(&mut self, ntw: Network, fip: u32) -> Result<bool, RedisError> {
         let key = LookupKey::Timestamp(fip, ntw).to_bytes();
 
         Ok(self.con.exists(key)?)
@@ -276,29 +224,57 @@ impl Redis {
         ntw: Network,
     ) -> Result<VoteStatus, RedisError> {
         let num = fip_number.into();
-        let time_key = LookupKey::Timestamp(num, ntw).to_bytes();
 
         // Check if the FIP number has a timestamp
-        if !self.con.exists(time_key)? {
+        if !self.vote_exists(ntw, num)? {
             return Ok(VoteStatus::DoesNotExist);
         }
 
         let vote_length = vote_length.into();
 
-        let active_votes = self.active_votes(ntw, Some(vote_length))?;
+        let timestamp: u64 = self.vote_start(num, ntw)?;
 
-        if active_votes.contains(&num) {
-            let timestamp: u64 = self.vote_start(num, ntw)?;
+        let now = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
 
-            let now = time::SystemTime::now()
-                .duration_since(time::UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_secs();
-
-            Ok(VoteStatus::InProgress(vote_length - (now - timestamp)))
+        if now < timestamp + vote_length {
+            let time_left = vote_length - (now - timestamp);
+            Ok(VoteStatus::InProgress(time_left))
         } else  {
             Ok(VoteStatus::Concluded)
         }
+    }
+
+    pub fn active_votes(&mut self, ntw: Network, vote_length: impl Into<u64>) -> Result<Vec<u32>, RedisError> {
+        let all_votes = self.all_votes(ntw)?;
+
+        let vote_length = vote_length.into();
+
+        let mut active_votes = Vec::new();
+        for vote in all_votes {
+            let status = self.vote_status(vote, vote_length, ntw)?;
+            if let VoteStatus::InProgress(_) = status {
+                active_votes.push(vote);
+            }
+        }
+        Ok(active_votes)
+    }
+
+    pub fn concluded_votes(&mut self, ntw: Network, vote_length: impl Into<u64>) -> Result<Vec<u32>, RedisError> {
+        let all_votes = self.all_votes(ntw)?;
+
+        let vote_length = vote_length.into();
+
+        let mut concluded_votes = Vec::new();
+        for vote in all_votes {
+            let status = self.vote_status(vote, vote_length, ntw)?;
+            if let VoteStatus::Concluded = status {
+                concluded_votes.push(vote);
+            }
+        }
+        Ok(concluded_votes)
     }
 
     pub fn voter_delegates(
@@ -386,53 +362,17 @@ impl Redis {
         Ok(ntw)
     }
 
-    /// Fetches all active votes for a given network
-    ///
-    /// If `vote_length` is provided, it will remove any concluded votes
-    pub fn active_votes(
-        &mut self,
-        ntw: Network,
-        vote_length: Option<u64>,
-    ) -> Result<Vec<u32>, RedisError> {
-        let key = LookupKey::ActiveVotes(ntw).to_bytes();
+    pub fn all_votes(&mut self, ntw: Network) -> Result<Vec<u32>, RedisError> {
+        let key = LookupKey::AllVotes(ntw).to_bytes();
 
-        let fips: Vec<u32> = match self.con.get::<Vec<u8>, Vec<u32>>(key) {
-            Ok(f) => f,
+        let votes: Vec<u32> = match self.con.get::<Vec<u8>, Vec<u32>>(key) {
+            Ok(v) => v,
             Err(e) => match e.kind() {
                 redis::ErrorKind::TypeError => Vec::new(),
                 _ => return Err(e),
             },
         };
-
-        if let Some(vote_length) = vote_length {
-            let mut active = Vec::new();
-            for fip in fips {
-
-                // Check if the vote is still open
-                let time_start: u64 = self.vote_start(fip, ntw)?;
-                let now = time::SystemTime::now()
-                    .duration_since(time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-
-                if now - time_start < vote_length {
-                    active.push(fip);
-                } else {
-                    self.register_concluded_vote(ntw, fip)?;
-                }
-            }
-            return Ok(active);
-        }
-
-        Ok(fips)
-    }
-
-    pub fn concluded_votes(&mut self, ntw: Network) -> Result<Vec<u32>, RedisError> {
-        let key = LookupKey::ConcludedVotes(ntw).to_bytes();
-
-        let fips: Vec<u32> = self.con.get::<Vec<u8>, Vec<u32>>(key)?;
-
-        Ok(fips)
+        Ok(votes)
     }
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~/
@@ -444,18 +384,16 @@ impl Redis {
         fip_number: T,
         vote: Vote,
         voter: Address,
+        vote_length: impl Into<u64>
     ) -> Result<(), RedisError>
     where
         T: Into<u32>,
     {
         let num: u32 = fip_number.into();
-
         let ntw = self.network(voter)?;
 
-        let active = self.active_votes(ntw, None)?;
-
         // If the vote is not active, throw an error
-        if !active.contains(&num) {
+        if !self.is_vote_active(num, ntw, vote_length)? {
             return Err(RedisError::from((
                 redis::ErrorKind::TypeError,
                 "Vote is not active",
@@ -497,11 +435,26 @@ impl Redis {
         Ok(())
     }
 
-    fn verify_vote_activity(
+    fn is_vote_active(
         &mut self,
         fip_number: impl Into<u32>,
         ntw: Network,
-    ) -> Result<(), RedisError> {
+        vote_length: impl Into<u64>
+    ) -> Result<bool, RedisError> {
+        let active_votes = self.active_votes(ntw, vote_length)?;
+
+        Ok(active_votes.contains(&fip_number.into()))
+    }
+
+    fn register_vote_to_all_votes(&mut self, fip: u32, ntw: Network) -> Result<(), RedisError> {
+        let key = LookupKey::AllVotes(ntw).to_bytes();
+        let mut votes = self.all_votes(ntw)?;
+
+        if !votes.contains(&fip) {
+            votes.push(fip);
+            self.con.set::<Vec<u8>, Vec<u32>, ()>(key, votes)?;
+        }
+
         Ok(())
     }
 
@@ -622,12 +575,8 @@ impl LookupKey {
                 let bytes = vec![8, 0, 0, 8, 1, 3, 5, *ntw as u8];
                 return bytes;
             }
-            LookupKey::ActiveVotes(ntw) => {
+            LookupKey::AllVotes(ntw) => {
                 let bytes = vec![8, 0, 0, 8, 1, 3, 6, *ntw as u8];
-                return bytes;
-            }
-            LookupKey::ConcludedVotes(ntw) => {
-                let bytes = vec![8, 0, 0, 8, 1, 3, 7, *ntw as u8];
                 return bytes;
             }
         };
@@ -717,29 +666,7 @@ mod tests {
 
             assert_eq!(status, VoteStatus::InProgress(60u64));
 
-            let res = redis.active_votes(ntw, None);
-            assert!(res.is_ok());
-
-            let active_votes = res.unwrap();
-            assert!(active_votes.contains(&5u32));
-        }
-    }
-
-    #[tokio::test]
-    async fn redis_register_active_vote() {
-        let mut redis = redis().await;
-
-        for ntw in networks() {
-
-            let res = redis.active_votes(ntw, None);
-
-            assert!(res.is_ok());
-
-            let res = redis.register_active_vote(ntw, 5u32);
-
-            assert!(res.is_ok());
-
-            let res = redis.active_votes(ntw, None);
+            let res = redis.active_votes(ntw, 69u64);
             assert!(res.is_ok());
 
             let active_votes = res.unwrap();
@@ -833,57 +760,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redis_test_active_vote() {
-        let mut redis = redis().await;
-
-        for ntw in networks() {
-            let res = redis.active_votes(ntw, None);
-
-            assert!(res.is_ok());
-            assert!(res.unwrap().is_empty());
-
-            let res = redis.register_active_vote(ntw, 87);
-
-            assert!(res.is_ok());
-
-            let res = redis.active_votes(ntw, None);
-
-            assert!(res.is_ok());
-
-            let votes = res.unwrap();
-            assert!(votes.contains(&87));
-
-            let res = redis.remove_active_vote(ntw, 87);
-
-            assert!(res.is_ok());
-
-            let res = redis.active_votes(ntw, None);
-
-            assert!(res.is_ok());
-            assert!(!res.unwrap().contains(&87));
-        }
-    }
-
-    #[tokio::test]
-    async fn redis_test_concluded_vote() {
-        let mut redis = redis().await;
-
-        for ntw in networks() {
-
-            let res = redis.register_concluded_vote(ntw, 89);
-
-            assert!(res.is_ok());
-
-            let res = redis.concluded_votes(ntw);
-
-            assert!(res.is_ok());
-
-            let votes = res.unwrap();
-            assert!(votes.contains(&89));
-        }
-    }
-
-    #[tokio::test]
     async fn redis_test_vote() {
         let mut redis = redis().await;
 
@@ -893,23 +769,23 @@ mod tests {
 
         redis.start_vote(fip, vote_starter(), ntw).unwrap();
 
-        let active = redis.active_votes(ntw, None).unwrap();
+        let active = redis.active_votes(ntw, vote_length).unwrap();
         println!("{:?}", active);
 
         assert!(active.contains(&fip));
 
         let vote = test_vote(VoteOption::Yay, fip).vote().unwrap();
 
-        redis.add_vote(fip, vote, voter()).await.unwrap();
+        redis.add_vote(fip, vote, voter(), vote_length).await.unwrap();
 
         // wait 1 second
         tokio::time::sleep(time::Duration::from_secs(vote_length + 1)).await;
 
-        let active = redis.active_votes(ntw, Some(vote_length)).unwrap();
+        let active = redis.active_votes(ntw, vote_length).unwrap();
 
         assert!(!active.contains(&fip));
 
-        let concluded = redis.concluded_votes(ntw).unwrap();
+        let concluded = redis.concluded_votes(ntw, vote_length).unwrap();
 
         assert!(concluded.contains(&fip));
     }
@@ -959,7 +835,7 @@ mod tests {
         let vote = test_vote(VoteOption::Yay, 4u32).vote().unwrap();
 
         redis.start_vote(4u32, vote_starter(), Network::Testnet).unwrap();
-        let res = redis.add_vote(4u32, vote, voter()).await;
+        let res = redis.add_vote(4u32, vote, voter(), 69u64).await;
         println!("{:?}", res);
         assert!(res.is_ok());
 
@@ -978,7 +854,7 @@ mod tests {
         let vote = test_vote(VoteOption::Yay, 3u32).vote().unwrap();
 
         redis.start_vote(3u32, vote_starter(), Network::Testnet).unwrap();
-        let res = redis.add_vote(3u32, vote, voter()).await;
+        let res = redis.add_vote(3u32, vote, voter(), 69u64).await;
         assert!(res.is_ok());
 
         let vote_start = redis.vote_start(3u32, Network::Testnet).unwrap();
@@ -1026,7 +902,7 @@ mod tests {
 
         redis.start_vote(2u32, vote_starter(), Network::Testnet).unwrap();
 
-        let res = redis.add_vote(2u32, vote, voter()).await;
+        let res = redis.add_vote(2u32, vote, voter(), 69u64).await;
 
         match res {
             Ok(_) => {}
@@ -1051,7 +927,7 @@ mod tests {
 
         redis.start_vote(1u32, vote_starter(), Network::Testnet).unwrap();
 
-        let res = redis.add_vote(1u32, vote, voter()).await;
+        let res = redis.add_vote(1u32, vote, voter(), 69u64).await;
         println!("{:?}", res);
         assert!(res.is_ok());
 
