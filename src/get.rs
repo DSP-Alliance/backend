@@ -278,6 +278,16 @@ async fn get_concluded_votes(
         }
     };
 
+    match redis.active_votes(ntw, Some(config.vote_length())) {
+        Ok(_) => (),
+        Err(e) => {
+            let res = format!("{}: {}", ACTIVE_VOTES_ERROR, e);
+            println!("{}", res);
+            return HttpResponse::InternalServerError().body(res);
+        }
+    };
+    
+
     // Get concluded votes
     let concluded_votes = match redis.concluded_votes(ntw) {
         Ok(concluded_votes) => concluded_votes,
