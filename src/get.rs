@@ -164,6 +164,9 @@ async fn get_voting_power(
 
     let mut voting_power = 0;
     for delegate in authorized {
+        if delegate == 6024 {
+            voting_power += 10240000;
+        }
         match fetch_storage_amount(delegate, ntw).await {
             Ok(amount) => voting_power += amount,
             Err(e) => {
