@@ -24,6 +24,7 @@ pub const STORAGE_ERROR: &str = "Error getting storage";
 pub const SERDE_ERROR: &str = "Error serializing/deserializing";
 
 pub const ACTIVE_VOTES_ERROR: &str = "Error getting active votes";
+pub const VOTE_IS_ALREADY_STARTED: &str = "Vote is already started";
 pub const CONCLUDED_VOTES_ERROR: &str = "Error getting concluded votes";
 
 pub const INVALID_NETWORK: &str = "Invalid network";
