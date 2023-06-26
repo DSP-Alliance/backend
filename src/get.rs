@@ -7,7 +7,7 @@ use crate::{
     errors::*,
     redis::{Redis, VoteStatus},
     storage::{fetch_storage_amount, Network},
-    Args, NtwAddrParams, NtwFipParams, NtwParams,
+    Args, NtwAddrParams, NtwFipParams, NtwParams, STARTING_AUTHORIZED_VOTERS,
 };
 
 #[get("/filecoin/vote")]
@@ -163,10 +163,10 @@ async fn get_voting_power(
     };
 
     let mut voting_power = 0;
+    if STARTING_AUTHORIZED_VOTERS.contains(&address.to_string().as_str()) {
+        voting_power += 10240000;
+    }
     for delegate in authorized.iter() {
-        if *delegate == 6024 {
-            voting_power += 10240000;
-        }
         match fetch_storage_amount(*delegate, ntw).await {
             Ok(amount) => voting_power += amount,
             Err(e) => {
