@@ -365,8 +365,8 @@ impl Redis {
     pub fn all_votes(&mut self, ntw: Network) -> Result<Vec<u32>, RedisError> {
         let key = LookupKey::AllVotes(ntw).to_bytes();
 
-        let votes: Vec<u32> = match self.con.get::<Vec<u8>, Vec<u32>>(key) {
-            Ok(v) => v,
+        let votes: Vec<u32> = match self.con.get::<Vec<u8>, String>(key) {
+            Ok(v) => serde_json::from_str(v.as_str()).unwrap(),
             Err(e) => match e.kind() {
                 redis::ErrorKind::TypeError => Vec::new(),
                 _ => return Err(e),
@@ -449,10 +449,13 @@ impl Redis {
     fn register_vote_to_all_votes(&mut self, fip: u32, ntw: Network) -> Result<(), RedisError> {
         let key = LookupKey::AllVotes(ntw).to_bytes();
         let mut votes = self.all_votes(ntw)?;
+        println!("All votes: {:?}", votes);
 
         if !votes.contains(&fip) {
             votes.push(fip);
-            self.con.set::<Vec<u8>, Vec<u32>, ()>(key, votes)?;
+            let str_votes = serde_json::to_string(&votes).unwrap();
+            println!("All votes: {:?}", votes);
+            self.con.set::<Vec<u8>, String, ()>(key, str_votes)?;
         }
 
         Ok(())
@@ -917,6 +920,15 @@ mod tests {
 
         assert_eq!(results.yay, 1);
         assert_eq!(results.yay_storage_size, 10240000u128);
+    }
+
+    #[tokio::test]
+    async fn redis_test_duplicate_vote_start() {
+        let mut redis = redis().await;
+
+        redis.register_vote_to_all_votes(1u32, Network::Testnet).unwrap();
+
+        redis.register_vote_to_all_votes(3u32, Network::Testnet).unwrap();
     }
 
     #[tokio::test]
