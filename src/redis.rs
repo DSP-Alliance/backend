@@ -449,12 +449,10 @@ impl Redis {
     fn register_vote_to_all_votes(&mut self, fip: u32, ntw: Network) -> Result<(), RedisError> {
         let key = LookupKey::AllVotes(ntw).to_bytes();
         let mut votes = self.all_votes(ntw)?;
-        println!("All votes: {:?}", votes);
 
         if !votes.contains(&fip) {
             votes.push(fip);
             let str_votes = serde_json::to_string(&votes).unwrap();
-            println!("All votes: {:?}", votes);
             self.con.set::<Vec<u8>, String, ()>(key, str_votes)?;
         }
 
