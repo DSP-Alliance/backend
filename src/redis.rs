@@ -346,8 +346,8 @@ impl Redis {
 
     fn votes(&mut self, fip_number: impl Into<u32>, ntw: Network) -> Result<Vec<Vote>, RedisError> {
         let key = LookupKey::Votes(fip_number.into(), ntw).to_bytes();
-        let votes: Vec<Vote> = match self.con.get::<Vec<u8>, Vec<Vote>>(key) {
-            Ok(v) => v,
+        let votes: Vec<Vote> = match self.con.get::<Vec<u8>, String>(key) {
+            Ok(v) => serde_json::from_str(v.as_str()).unwrap(),
             Err(e) => match e.kind() {
                 redis::ErrorKind::TypeError => Vec::new(),
                 _ => return Err(e),
@@ -430,7 +430,8 @@ impl Redis {
 
         // Add the vote to the list of votes
         votes.push(vote);
-        self.con.set::<Vec<u8>, Vec<Vote>, ()>(key.clone(), votes)?;
+        let votes = serde_json::to_string(&votes).unwrap();
+        self.con.set::<Vec<u8>, String, ()>(key.clone(), votes)?;
 
         Ok(())
     }

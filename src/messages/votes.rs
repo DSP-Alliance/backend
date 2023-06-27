@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 use ethers::{prelude::*, types::Address};
 use redis::{from_redis_value, FromRedisValue, ToRedisArgs};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum VoteOption {
     Yay,
     Nay,
@@ -22,6 +22,7 @@ pub enum VoteError {
     InvalidVoteOption,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Vote {
     choice: VoteOption,
     address: Address,
