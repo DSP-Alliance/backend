@@ -40,7 +40,11 @@ async fn main() -> std::io::Result<()> {
     let args = Args::new();
     let serve_address = args.serve_address();
 
-    let port = serve_address.port().unwrap_or(80);
+    let port = match serve_address.scheme() {
+        "http" => 80,
+        "https" => 443,
+        _ => panic!("Invalid scheme"),
+    };
 
     let mut redis = Redis::new(args.redis_path()).unwrap();
 
