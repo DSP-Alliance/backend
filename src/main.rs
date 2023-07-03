@@ -18,8 +18,8 @@ use fip_voting::{
 };
 
 fn load_certs() -> ServerConfig {
-    let cert_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/example.com/fullchain.pem").unwrap());
-    let key_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/example.com/privkey.pem").unwrap());
+    let cert_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/sp-vote.com/fullchain.pem").unwrap());
+    let key_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/sp-vote.com/privkey.pem").unwrap());
 
     let cert_chain = certs(cert_file).unwrap().into_iter().map(rustls::Certificate).collect::<Vec<_>>();
     let mut keys = pkcs8_private_keys(key_file).unwrap().into_iter().map(rustls::PrivateKey).collect::<Vec<_>>();
