@@ -40,7 +40,6 @@ async fn main() -> std::io::Result<()> {
     let args = Args::new();
     let serve_address = args.serve_address();
 
-    println!("Serving at {}", serve_address);
     let port = serve_address.port().unwrap_or(80);
 
     let mut redis = Redis::new(args.redis_path()).unwrap();
@@ -88,8 +87,10 @@ async fn main() -> std::io::Result<()> {
     if port == 443 {
         let certs = load_certs();
 
+        println!("Serving over HTTPS at {}", serve_address);
         server.bind_rustls((serve_address.host().unwrap().to_string(), port), certs)?
     } else {
+        println!("Serving over HTTP at {}", serve_address);
         server.bind((serve_address.host().unwrap().to_string(), port))?
     }
     .run()
