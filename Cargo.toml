@@ -7,10 +7,12 @@ edition = "2021"
 
 [dependencies]
 # WEB DEP
-actix-web = "4.3.1"
+actix-web = { version = "4.3.1", features = ["rustls"]}
 actix-cors = "0.6.4"
 url = "2.3.1"
 reqwest = { version = "0.11.18", features = ["json"] }
+rustls = "0.20.8"
+rustls-pemfile = "1.0.2"
 
 # DB DEP
 redis = "0.23.0"

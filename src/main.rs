@@ -1,5 +1,9 @@
+use std::{io::BufReader, fs::File};
+
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
+use rustls::ServerConfig;
+use rustls_pemfile::{certs, pkcs8_private_keys};
 
 use fip_voting::{
     authorized_voters,
@@ -12,6 +16,23 @@ use fip_voting::{
     storage::Network,
     Args,
 };
+
+fn load_certs() -> ServerConfig {
+    let cert_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/example.com/fullchain.pem").unwrap());
+    let key_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/example.com/privkey.pem").unwrap());
+
+    let cert_chain = certs(cert_file).unwrap().into_iter().map(rustls::Certificate).collect::<Vec<_>>();
+    let mut keys = pkcs8_private_keys(key_file).unwrap().into_iter().map(rustls::PrivateKey).collect::<Vec<_>>();
+
+    if keys.is_empty() {
+        panic!("No private keys found");
+    }
+
+    let config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth();
+    config.with_single_cert(cert_chain, keys.remove(0)).unwrap()
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -36,7 +57,7 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
             .allow_any_method()
@@ -58,8 +79,19 @@ async fn main() -> std::io::Result<()> {
             .service(unregister_voter)
             .service(register_vote_starter)
             .service(start_vote)
-    })
+    });
+    /* 
     .bind((serve_address.host().unwrap().to_string(), port))?
+    .run()
+    .await*/
+
+    if port == 443 {
+        let certs = load_certs();
+
+        server.bind_rustls((serve_address.host().unwrap().to_string(), port), certs)?
+    } else {
+        server.bind((serve_address.host().unwrap().to_string(), port))?
+    }
     .run()
     .await
 }
