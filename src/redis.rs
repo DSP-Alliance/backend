@@ -511,7 +511,7 @@ impl Redis {
 
         let current_storage = self.get_storage(fip_number, vote, ntw)?;
 
-        let mut new_storage = match fetch_storage_amount(sp_id, ntw).await {
+        let new_storage = match fetch_storage_amount(sp_id, ntw).await {
             Ok(s) => s,
             Err(_) => {
                 return Err(RedisError::from((
