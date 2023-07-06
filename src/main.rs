@@ -1,4 +1,4 @@
-use std::{io::BufReader, fs::File};
+use std::{fs::File, io::BufReader};
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
@@ -8,8 +8,8 @@ use rustls_pemfile::{certs, pkcs8_private_keys};
 use fip_voting::{
     authorized_voters,
     get::{
-        get_active_votes, get_concluded_votes, get_delegates, get_vote_starters, get_votes,
-        get_voting_power, get_all_concluded_votes,
+        get_active_votes, get_all_concluded_votes, get_concluded_votes, get_delegates,
+        get_vote_starters, get_votes, get_voting_power,
     },
     post::{register_vote, register_vote_starter, register_voter, start_vote, unregister_voter},
     redis::Redis,
@@ -18,11 +18,21 @@ use fip_voting::{
 };
 
 fn load_certs() -> ServerConfig {
-    let cert_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/sp-vote.com/fullchain.pem").unwrap());
-    let key_file = &mut BufReader::new(File::open("/etc/letsencrypt/live/sp-vote.com/privkey.pem").unwrap());
+    let cert_file =
+        &mut BufReader::new(File::open("/etc/letsencrypt/live/sp-vote.com/fullchain.pem").unwrap());
+    let key_file =
+        &mut BufReader::new(File::open("/etc/letsencrypt/live/sp-vote.com/privkey.pem").unwrap());
 
-    let cert_chain = certs(cert_file).unwrap().into_iter().map(rustls::Certificate).collect::<Vec<_>>();
-    let mut keys = pkcs8_private_keys(key_file).unwrap().into_iter().map(rustls::PrivateKey).collect::<Vec<_>>();
+    let cert_chain = certs(cert_file)
+        .unwrap()
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect::<Vec<_>>();
+    let mut keys = pkcs8_private_keys(key_file)
+        .unwrap()
+        .into_iter()
+        .map(rustls::PrivateKey)
+        .collect::<Vec<_>>();
 
     if keys.is_empty() {
         panic!("No private keys found");
@@ -83,7 +93,7 @@ async fn main() -> std::io::Result<()> {
             .service(register_vote_starter)
             .service(start_vote)
     });
-    /* 
+    /*
     .bind((serve_address.host().unwrap().to_string(), port))?
     .run()
     .await*/

@@ -1,4 +1,4 @@
-use std::{str::FromStr, collections::HashMap};
+use std::{collections::HashMap, str::FromStr};
 
 use actix_web::{get, web, HttpResponse, Responder};
 use ethers::types::Address;
@@ -288,7 +288,10 @@ async fn get_voting_power(
     };
 
     let mut voting_power = 0;
-    if STARTING_AUTHORIZED_VOTERS.map(|s| Address::from_str(s).unwrap()).contains(&address) {
+    if STARTING_AUTHORIZED_VOTERS
+        .map(|s| Address::from_str(s).unwrap())
+        .contains(&address)
+    {
         voting_power += 10240000;
     }
     for delegate in authorized.iter() {
@@ -302,7 +305,10 @@ async fn get_voting_power(
         }
     }
 
-    println!("Voting power: {} for address: {} and delegates {:?}", voting_power, address, authorized);
+    println!(
+        "Voting power: {} for address: {} and delegates {:?}",
+        voting_power, address, authorized
+    );
 
     HttpResponse::Ok().body(voting_power.to_string())
 }

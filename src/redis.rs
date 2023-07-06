@@ -33,7 +33,7 @@ enum LookupKey {
     Voter(Network, Address),
     /// The voter authorized to start a vote on that network
     VoteStarters(Network),
-    /// All FIP votes on the network, 
+    /// All FIP votes on the network,
     AllVotes(Network),
     /// VoteChoice and FIP number to total storage amount
     Storage(VoteOption, Network, u32),
@@ -86,7 +86,7 @@ impl Redis {
             .duration_since(time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        // After this is set then the vote is considered started 
+        // After this is set then the vote is considered started
         self.con.set::<Vec<u8>, u64, ()>(time_key, timestamp)?;
 
         Ok(())
@@ -160,7 +160,7 @@ impl Redis {
     pub fn vote_exists(&mut self, ntw: Network, fip: u32) -> Result<bool, RedisError> {
         let key = LookupKey::Timestamp(fip, ntw).to_bytes();
 
-        Ok(self.con.exists(key)?)
+        self.con.exists(key)
     }
 
     pub fn is_authorized_starter(
@@ -242,12 +242,16 @@ impl Redis {
         if now < timestamp + vote_length {
             let time_left = vote_length - (now - timestamp);
             Ok(VoteStatus::InProgress(time_left))
-        } else  {
+        } else {
             Ok(VoteStatus::Concluded)
         }
     }
 
-    pub fn active_votes(&mut self, ntw: Network, vote_length: impl Into<u64>) -> Result<Vec<u32>, RedisError> {
+    pub fn active_votes(
+        &mut self,
+        ntw: Network,
+        vote_length: impl Into<u64>,
+    ) -> Result<Vec<u32>, RedisError> {
         let all_votes = self.all_votes(ntw)?;
 
         let vote_length = vote_length.into();
@@ -262,7 +266,11 @@ impl Redis {
         Ok(active_votes)
     }
 
-    pub fn concluded_votes(&mut self, ntw: Network, vote_length: impl Into<u64>) -> Result<Vec<u32>, RedisError> {
+    pub fn concluded_votes(
+        &mut self,
+        ntw: Network,
+        vote_length: impl Into<u64>,
+    ) -> Result<Vec<u32>, RedisError> {
         let all_votes = self.all_votes(ntw)?;
 
         let vote_length = vote_length.into();
@@ -384,7 +392,7 @@ impl Redis {
         fip_number: T,
         vote: Vote,
         voter: Address,
-        vote_length: impl Into<u64>
+        vote_length: impl Into<u64>,
     ) -> Result<(), RedisError>
     where
         T: Into<u32>,
@@ -440,7 +448,7 @@ impl Redis {
         &mut self,
         fip_number: impl Into<u32>,
         ntw: Network,
-        vote_length: impl Into<u64>
+        vote_length: impl Into<u64>,
     ) -> Result<bool, RedisError> {
         let active_votes = self.active_votes(ntw, vote_length)?;
 
@@ -775,7 +783,10 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, fip).vote().unwrap();
 
-        redis.add_vote(fip, vote, voter(), vote_length).await.unwrap();
+        redis
+            .add_vote(fip, vote, voter(), vote_length)
+            .await
+            .unwrap();
 
         // wait 1 second
         tokio::time::sleep(time::Duration::from_secs(vote_length + 1)).await;
@@ -833,7 +844,9 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, 4u32).vote().unwrap();
 
-        redis.start_vote(4u32, vote_starter(), Network::Testnet).unwrap();
+        redis
+            .start_vote(4u32, vote_starter(), Network::Testnet)
+            .unwrap();
         let res = redis.add_vote(4u32, vote, voter(), 69u64).await;
         println!("{:?}", res);
         assert!(res.is_ok());
@@ -852,7 +865,9 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, 3u32).vote().unwrap();
 
-        redis.start_vote(3u32, vote_starter(), Network::Testnet).unwrap();
+        redis
+            .start_vote(3u32, vote_starter(), Network::Testnet)
+            .unwrap();
         let res = redis.add_vote(3u32, vote, voter(), 69u64).await;
         assert!(res.is_ok());
 
@@ -899,7 +914,9 @@ mod tests {
 
         let vote = test_vote(VoteOption::Yay, 2u32).vote().unwrap();
 
-        redis.start_vote(2u32, vote_starter(), Network::Testnet).unwrap();
+        redis
+            .start_vote(2u32, vote_starter(), Network::Testnet)
+            .unwrap();
 
         let res = redis.add_vote(2u32, vote, voter(), 69u64).await;
 
@@ -922,9 +939,13 @@ mod tests {
     async fn redis_test_duplicate_vote_start() {
         let mut redis = redis().await;
 
-        redis.register_vote_to_all_votes(1u32, Network::Testnet).unwrap();
+        redis
+            .register_vote_to_all_votes(1u32, Network::Testnet)
+            .unwrap();
 
-        redis.register_vote_to_all_votes(3u32, Network::Testnet).unwrap();
+        redis
+            .register_vote_to_all_votes(3u32, Network::Testnet)
+            .unwrap();
     }
 
     #[tokio::test]
@@ -936,7 +957,9 @@ mod tests {
         assert!(res.is_ok());
         assert!(!res.unwrap());
 
-        redis.start_vote(129u32, vote_starter(), Network::Testnet).unwrap();
+        redis
+            .start_vote(129u32, vote_starter(), Network::Testnet)
+            .unwrap();
 
         let res = redis.vote_exists(Network::Testnet, 129u32);
 
@@ -952,14 +975,18 @@ mod tests {
 
         assert!(res.is_empty());
 
-        redis.register_vote_to_all_votes(87u32, Network::Testnet).unwrap();
+        redis
+            .register_vote_to_all_votes(87u32, Network::Testnet)
+            .unwrap();
 
         let res = redis.all_votes(Network::Testnet).unwrap();
 
         assert_eq!(res.len(), 1);
         assert_eq!(res[0], 87u32);
 
-        redis.register_vote_to_all_votes(87u32, Network::Testnet).unwrap();
+        redis
+            .register_vote_to_all_votes(87u32, Network::Testnet)
+            .unwrap();
     }
 
     #[tokio::test]
@@ -967,8 +994,9 @@ mod tests {
         let mut redis = redis().await;
         let vote = test_vote(VoteOption::Yay, 1u32).vote().unwrap();
 
-
-        redis.start_vote(1u32, vote_starter(), Network::Testnet).unwrap();
+        redis
+            .start_vote(1u32, vote_starter(), Network::Testnet)
+            .unwrap();
 
         let res = redis.add_vote(1u32, vote, voter(), 69u64).await;
         println!("{:?}", res);
