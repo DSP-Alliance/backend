@@ -520,9 +520,6 @@ impl Redis {
                 )))
             }
         };
-        if sp_id == 6024 {
-            new_storage += 10240000;
-        }
         let storage = current_storage + new_storage;
         let storage_bytes = storage.to_be_bytes().to_vec();
         self.con
