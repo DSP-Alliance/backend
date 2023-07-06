@@ -22,7 +22,7 @@ To register, you will need to execute a script on your miner computer. You can f
 To make this registration process easier, you can use a one-liner bash command to fetch and execute the script:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/team-telnyx/fip-voting/master/scripts/registration.bash
+curl -sSL https://raw.githubusercontent.com/fip-voting/backend/master/scripts/registration.bash
 ```
 
 Once the script is available on your machine, you can run it using the following format:
@@ -40,8 +40,8 @@ To cast a vote, please visit [voting app](fip-voting.vercel.app). Before you can
 In addition, please note that voting can only be initiated by an authorized vote starter who has previously registered their address. Each Ethereum address you delegated during registration is allowed one vote.
 Pre-requisites
 
-* Access to your miner computer to run the bash script.
+- Access to your miner computer to run the bash script.
 
-* Control over your miner key and worker address for registration.
+- Control over your miner key and worker address for registration.
 
-* An Ethereum address to delegate your voting power to.
+- An Ethereum address to delegate your voting power to.
